@@ -91,7 +91,7 @@ export function registerAssetTools(server: McpServer, live: LiveClient): void {
     },
     async (args) => {
       try {
-        const data = await live.call<Record<string, unknown>>("export.run", args);
+        const data = await live.call<Record<string, unknown>>("export.run", args, ["files"]);
         const files = (data.files as string[]) ?? [];
         return ok(data, `Wrote ${files.length} file(s): ${files.join(", ")}`);
       } catch (err) {

@@ -4,6 +4,45 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is
 [semver](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`transform op=crop_to_content` did nothing and reported success.** It called
+  `CanvasSize{trimOutside=true}`, which trims to the *selection*; with none set
+  the canvas was untouched. Aseprite's own Sprite > Trim is `AutocropSprite`.
+  `pixelsChanged` now reports the area dropped.
+- **Importing a reference broke every write that followed it.** `app.open` makes
+  the opened file the active sprite and closing it left *no* active sprite at
+  all — `app.transaction` refuses to run in that state, so `reference` op
+  `import` and `sample_palette` failed, and in the UI the user's tab changed
+  under them. The active sprite is restored.
+- **A failure inside a transaction arrived as `function: 0x...`.** `transact`
+  retried the failing closure through the older one-argument `app.transaction`
+  and reported the *second* attempt's error, hiding the first — and replaying a
+  mutating closure on top of its own half-applied changes. Which form the build
+  supports is probed once instead.
+- **`doctor` started a bridge and then reported that bridge as healthy**, and
+  left it running. It now says when it started one to test with, stops it again,
+  and reports the extension as `unknown` rather than telling the user to open
+  Aseprite when the bridge — not Aseprite — is what could not be reached.
+
+### Added
+
+- `tests/pure.test.lua`: the Lua checks that need no editor, so CI finally
+  executes part of the extension instead of only parsing it. It runs under stock
+  Lua with stand-ins, and unmodified inside Aseprite with the real types.
+- A presence check at the Lua→TypeScript boundary: a call may declare the reply
+  fields it goes on to read, and a reply without them fails with a message
+  naming them instead of letting `undefined` reach the agent as a success. This
+  catches an extension older than the server; it is not schema validation, and
+  an argument the two sides spell differently is still only caught by the Lua
+  suite.
+- Coverage for every palette command, reference import/list/sample/remove,
+  `transform` crop/translate/scale/outline, `select` all/ellipse/color/invert/
+  grow/shrink, `resize_canvas`, `set_properties`, and png/gif/spritesheet
+  export. The Lua suite goes from 39 checks to 57, the Node suite to 40.
+
 ## [0.1.0] — 2026-09-08
 
 First release. Includes every fix from the pre-release audit below.

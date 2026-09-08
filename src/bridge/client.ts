@@ -122,7 +122,29 @@ export class LiveClient {
     return this.pluginConnected;
   }
 
-  async call<T = unknown>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
+  /**
+   * @param expect Field names the caller goes on to read. Nothing else checks
+   *   them: `call<T>` is a compile-time claim about data that crossed a socket
+   *   from a separately installed extension, and an extension older than this
+   *   server answers a command it knows with fields it does not have. Without
+   *   this the missing value becomes `undefined`, flows into the summary the
+   *   agent reads, and the run looks like it worked.
+   *
+   *   Presence only — this is not schema validation, and it cannot catch an
+   *   argument name the two sides spell differently, because Lua defaults the
+   *   value and reports success. Only tests/extension.test.lua catches that.
+   */
+  // TODO(boundary): only the call sites whose fields feed a summary or a
+  // decision declare `expect` — draw.batch, recolor.apply, export.run,
+  // session.site, sprite.info. The rest (select, transform, reference, tileset,
+  // look, palette) still rest on `call<T>` alone. Extend as each is checked
+  // against a real reply; guessing a field name here turns a working path into
+  // a hard error.
+  async call<T = unknown>(
+    cmd: string,
+    args: Record<string, unknown> = {},
+    expect: readonly string[] = [],
+  ): Promise<T> {
     if (!this.bridgeConnected) {
       await this.waitForBridge(2_000);
       if (!this.bridgeConnected) throw notConnected("Bridge process is not reachable.");
@@ -144,7 +166,21 @@ export class LiveClient {
       }, this.timeoutMs);
 
       this.pending.set(id, {
-        resolve: resolve as (v: unknown) => void,
+        resolve: (value: unknown) => {
+          const missing = missingFields(value, expect);
+          if (missing.length > 0) {
+            reject(
+              new LiveError(
+                "aseprite_error",
+                `The Aseprite extension answered '${cmd}' without ${missing.map((f) => `'${f}'`).join(", ")}. ` +
+                  "It is probably older than this server: run `install-extension` and restart Aseprite.",
+                { cmd, missing, doNotFallBackToDisk: true },
+              ),
+            );
+            return;
+          }
+          resolve(value as T);
+        },
         reject,
         timer,
       });
@@ -282,4 +318,18 @@ export class LiveClient {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * `null` counts as present: several commands legitimately answer `{sprite: null}`
+ * for "nothing is open". Absent is the failure — the field the caller was told
+ * to expect never arrived.
+ */
+function missingFields(value: unknown, expect: readonly string[]): string[] {
+  if (expect.length === 0) return [];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return [...expect];
+  }
+  const record = value as Record<string, unknown>;
+  return expect.filter((field) => !(field in record));
 }

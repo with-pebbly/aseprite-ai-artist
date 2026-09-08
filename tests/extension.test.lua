@@ -7,6 +7,10 @@
 -- the only way to prove the Lua side works without a human clicking in the UI.
 --------------------------------------------------------------------------------
 
+-- FIXME(ci): this suite never runs in CI — no runner has Aseprite — so a
+-- regression in a command handler passes a green pipeline. tests/pure.test.lua
+-- covers the editor-free half; the rest is guarded only by running this locally
+-- before a release. Fixing it properly means building Aseprite in the workflow.
 local root = app.params["root"] or "."
 dofile(root .. "/extension/ai-artist.lua")
 

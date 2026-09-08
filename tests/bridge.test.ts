@@ -183,3 +183,31 @@ test("a second bridge on the same ports loses the race and says so", async () =>
   assert.equal(await duplicate.start(), false);
   await duplicate.stop();
 });
+
+test("a reply missing a field the caller needs is an error, not undefined", async () => {
+  // An extension older than the server answers a command it knows with fields
+  // it does not have. Passed through, the missing value reaches the agent as
+  // "undefined pixel(s) changed" on a call that looks like it succeeded.
+  const plugin = await fakePlugin((cmd) =>
+    cmd === "session.site" ? { sprite: null } : { opsApplied: 1 },
+  );
+  const c = client();
+  await c.waitForPlugin(2_000);
+
+  await assert.rejects(
+    () => c.call("draw.batch", {}, ["opsApplied", "pixelsChanged"]),
+    (err: Error & { code?: string; details?: { missing?: string[] } }) => {
+      assert.equal(err.code, "aseprite_error");
+      assert.deepEqual(err.details?.missing, ["pixelsChanged"]);
+      assert.match(err.message, /install-extension/);
+      return true;
+    },
+  );
+
+  // A field that is present but null is an answer, not an omission.
+  const data = await c.call<{ sprite: null }>("session.site", {}, ["sprite"]);
+  assert.equal(data.sprite, null);
+
+  c.close();
+  plugin.close();
+});
