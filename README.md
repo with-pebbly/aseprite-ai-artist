@@ -244,6 +244,22 @@ no authentication, because there is nothing remote to authenticate. `run_lua` is
 arbitrary code execution inside the app holding your unsaved work, and is off
 unless you turn it on. Full threat model in [SECURITY.md](SECURITY.md).
 
+## One more, drawn the same way
+
+<div align="center">
+
+<img src="docs/media/harbour.gif" alt="A pixel-art harbour at night: a lighthouse beam sweeps over the water, windows flicker in the town, smoke drifts from a chimney" width="768">
+
+*256×144, 28 frames, ten layers, exported at 3×. The scene is painted once and
+only six layers move — the beam, the windows, the water, the smoke, the boat and
+the stars — each on its own cycle length, which is what stops an ambient loop
+feeling mechanical. It took five review passes: the pier read as fallen
+scaffolding, the beam was a hard bar lying across the roofs instead of light,
+windows sat on houses that were not theirs, reflections fell where nothing cast
+them, and the whole loop ran twice too fast.*
+
+</div>
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
