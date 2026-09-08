@@ -50,11 +50,12 @@
     "dev": "tsc -p tsconfig.json --watch",
     "clean": "rm -rf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test --experimental-strip-types tests/color.test.ts tests/render.test.ts tests/bridge.test.ts tests/server.test.ts",
+    "test": "node --test --experimental-strip-types tests/color.test.ts tests/render.test.ts tests/bridge.test.ts tests/server.test.ts tests/cli.test.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "npm run clean && npm run build",
     "test:extension": "aseprite -b --script-param root=. --script tests/extension.test.lua",
-    "test:e2e": "node tests/e2e.mjs"
+    "test:e2e": "node tests/e2e.mjs",
+    "test:pure": "lua tests/pure.test.lua"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

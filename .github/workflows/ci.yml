@@ -24,8 +24,8 @@ jobs:
       - run: npm run build
       - run: npm test
 
-  lua-syntax:
-    name: Lua syntax
+  lua:
+    name: Lua
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,10 +39,17 @@ jobs:
       # syntax error in the sources and is not one.
       - name: Parse-check Lua sources
         run: |
-          for file in extension/ai-artist.lua tests/extension.test.lua; do
+          for file in extension/ai-artist.lua tests/extension.test.lua tests/pure.test.lua; do
             echo "checking $file"
             luac -p "$file"
           done
+
+      # The Aseprite-backed suite cannot run here — no runner has Aseprite — so
+      # without this the whole Lua half of the project ships on a green pipeline
+      # that never executed a line of it. These are the parts that do not need
+      # the editor: table shape, CIELAB, hex, the autotile mask set.
+      - name: Run the Aseprite-free Lua tests
+        run: lua tests/pure.test.lua
 
   package:
     name: Package contents

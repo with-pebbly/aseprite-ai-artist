@@ -59,6 +59,7 @@ export class LiveClient {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private closed = false;
   private lastSpawnAt = 0;
+  private spawnedPid: number | null = null;
 
   private state: BridgeStateFrame | null = null;
 
@@ -81,6 +82,16 @@ export class LiveClient {
 
   get hello(): HelloFrame | null {
     return this.state?.hello ?? null;
+  }
+
+  /**
+   * PID of a bridge this client started itself, or null if it attached to one
+   * that was already running. `doctor` needs the difference: a diagnostic must
+   * not leave a daemon behind, and must not report a bridge as healthy when the
+   * only reason it is up is that the diagnostic started it.
+   */
+  get spawnedBridgePid(): number | null {
+    return this.spawnedPid;
   }
 
   get features(): string[] {
@@ -261,6 +272,7 @@ export class LiveClient {
         { detached: true, stdio: "ignore" },
       );
       child.unref();
+      this.spawnedPid = child.pid ?? null;
       this.log("spawned bridge process");
     } catch (err) {
       this.log(`bridge spawn failed: ${(err as Error).message}`);

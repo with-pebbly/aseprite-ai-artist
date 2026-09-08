@@ -229,25 +229,44 @@ async function doctor(opts: { pluginPort: number; controlPort: number }): Promis
       : "✗ Aseprite config dir   not found — is Aseprite installed and has it been run once?",
   );
 
+  // Probe before spawning anything. "The bridge is up" and "the bridge is up
+  // because I just started it" are different answers, and only the first is a
+  // diagnosis — reporting the second as a tick tells the user their setup works
+  // when all that works is this command.
+  const probe = new LiveClient({
+    controlPort: opts.controlPort,
+    pluginPort: opts.pluginPort,
+    autoSpawnBridge: false,
+    log: () => {},
+  });
+  const wasAlreadyRunning = await probe.waitForBridge(1_500);
+  probe.close();
+
+  // Reaching Aseprite at all requires a bridge — the extension connects to it,
+  // not to us — so start one when there is none, and stop it again below.
   const live = new LiveClient({
     controlPort: opts.controlPort,
     pluginPort: opts.pluginPort,
-    autoSpawnBridge: true,
+    autoSpawnBridge: !wasAlreadyRunning,
     log: () => {},
   });
 
   const bridgeUp = await live.waitForBridge(4_000);
   lines.push(
-    bridgeUp
-      ? `✓ Bridge                 ws://127.0.0.1:${opts.controlPort}`
-      : `✗ Bridge                 could not reach or start it on :${opts.controlPort}`,
+    !bridgeUp
+      ? `✗ Bridge                 could not reach or start it on :${opts.controlPort}`
+      : wasAlreadyRunning
+        ? `✓ Bridge                 ws://127.0.0.1:${opts.controlPort}`
+        : `· Bridge                 not running — started one to test, stopping it again below`,
   );
 
   const pluginUp = bridgeUp ? await live.waitForPlugin(4_000) : false;
   lines.push(
     pluginUp
       ? `✓ Aseprite extension     ${live.hello?.extensionVersion ?? "?"} on Aseprite ${live.hello?.asepriteVersion ?? "?"}`
-      : "✗ Aseprite extension     not connected — open Aseprite, or run `install-extension` and restart it",
+      : bridgeUp
+        ? "✗ Aseprite extension     not connected — open Aseprite, or run `install-extension` and restart it"
+        : "· Aseprite extension     unknown — cannot be checked without a bridge",
   );
 
   if (pluginUp) {
@@ -280,6 +299,19 @@ async function doctor(opts: { pluginPort: number; controlPort: number }): Promis
   }
 
   live.close();
+
+  // A diagnostic must not leave a daemon behind. Only ever the one this run
+  // started: a bridge that was already there belongs to a live session.
+  const startedPid = live.spawnedBridgePid;
+  if (startedPid !== null) {
+    try {
+      process.kill(startedPid);
+      lines.push("", `· Stopped the bridge this check started (pid ${startedPid}).`);
+    } catch {
+      // Already gone — it lost the port race, or exited on its own.
+    }
+  }
+
   process.stdout.write(lines.join("\n") + "\n");
   process.exitCode = pluginUp ? 0 : 1;
 }
