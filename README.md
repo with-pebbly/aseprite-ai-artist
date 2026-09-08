@@ -109,6 +109,16 @@ Two separate things matter, and they do not point at the same client.
 | Codex CLI | ✅ | ✅ | ✖ | — |
 | Gemini CLI, Cursor, VS Code, Windsurf | ✅ | ✅ | varies | — |
 
+The two right-hand columns are about *delivery*, not content. Every client gets
+the same rulebook and the same eleven workflows through `rules://` and
+`skill://` — a client without prompts reads the identical markdown, it just has
+to fetch it rather than being handed a menu of `/pixel-*` commands. What Claude
+Code alone gets is the ergonomics and one thing of real substance: the hook that
+nudges the agent to **look** at what it just drew, and the specialist subagents,
+including a critic that reviews with its own fresh context. Elsewhere that
+critique has to come from you — which is exactly how the animation at the top of
+this page was made: Codex drew, a reviewer picked it apart, three times.
+
 **Drawing ability** — hands-on impression rather than a benchmark, and the part
 that surprises people:
 
