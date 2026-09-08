@@ -1,0 +1,26 @@
+name: npm auth check
+
+# Granular npm tokens expire, and the release workflow only reaches the registry
+# after it has built and packed everything — so a dead token surfaces at the
+# worst moment, on a release that then needs redoing. Run this by hand whenever
+# the token is rotated, or before cutting a release after a long gap.
+on:
+  workflow_dispatch:
+
+jobs:
+  whoami:
+    name: Can NPM_TOKEN publish?
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Authenticates as
+        run: npm whoami
+
+      - name: Has write access to the scope
+        run: npm access list packages @pebbly
