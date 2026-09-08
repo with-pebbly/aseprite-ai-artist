@@ -59,7 +59,7 @@ export function registerSessionTools(server: McpServer, live: LiveClient): void 
       }
 
       try {
-        const site = await live.call<Record<string, unknown>>("session.site", {}, ["sprite"]);
+        const site = await live.call<Record<string, unknown>>("session.site", {}, ["openSprites"]);
         const sprite = site.sprite as Record<string, unknown> | null;
         return ok(
           {

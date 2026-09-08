@@ -133,6 +133,13 @@ export class LiveClient {
    *   Presence only — this is not schema validation, and it cannot catch an
    *   argument name the two sides spell differently, because Lua defaults the
    *   value and reports success. Only tests/extension.test.lua catches that.
+   *
+   *   NEVER list a field the extension may leave unset. A Lua table cannot hold
+   *   nil, so `{sprite = nil}` does not reach the wire as `null` — the key is
+   *   simply absent, and is indistinguishable from an old extension omitting
+   *   it. Listing `sprite` here turned "no document is open", which is the
+   *   normal state of a freshly started editor, into a hard error telling the
+   *   user to reinstall a perfectly current extension.
    */
   // TODO(boundary): only the call sites whose fields feed a summary or a
   // decision declare `expect` — draw.batch, recolor.apply, export.run,

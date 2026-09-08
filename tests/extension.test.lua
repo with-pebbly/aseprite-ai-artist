@@ -1122,6 +1122,19 @@ check("a failure inside a transaction reports a readable message", function()
   assert(#reply.error.message > 10, "error message is too short to act on")
 end)
 
+check("a nil field is absent from the payload, not null", function()
+  -- The rule the TypeScript side must respect: a Lua table cannot hold nil, so
+  -- an unset field does not arrive as null — it does not arrive at all, and is
+  -- indistinguishable from an extension too old to send it. `session.site`
+  -- leaves sprite/layer/frame unset whenever nothing is open.
+  local encoded = A.encodeJson({ sprite = nil, openSprites = 0 })
+  assert(not encoded:find("sprite"), "a nil field reached the payload: " .. encoded)
+  assert(encoded:find("openSprites"), "openSprites missing from: " .. encoded)
+
+  local site = call("session.site")
+  assert(site.openSprites ~= nil, "session.site must always report openSprites")
+end)
+
 sprite:close()
 
 print("")

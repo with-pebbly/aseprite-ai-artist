@@ -1,23 +1,32 @@
+<div align="center">
+
+<img src="docs/media/mascot.png" alt="The Aseprite AI Artist mascot" width="192">
+
 # Aseprite AI Artist
 
-Let a coding agent draw pixel art in your **open Aseprite window** — not in a
+**Let a coding agent draw pixel art in your open Aseprite window** — not in a
 copy, not on disk, in the document you are looking at.
+
+[![npm](https://img.shields.io/npm/v/@pebbly/aseprite-ai-artist?color=%23e07a3f&label=npm)](https://www.npmjs.com/package/@pebbly/aseprite-ai-artist)
+[![CI](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml/badge.svg)](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml)
+[![licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
+
+<img src="docs/media/walk.gif" alt="Walk cycle" width="128">
+&nbsp;&nbsp;
+<img src="docs/media/idle.gif" alt="Idle animation" width="128">
+&nbsp;&nbsp;
+<img src="docs/media/paint.gif" alt="Painting animation" width="128">
+
+*Every frame above was drawn by an agent through this server, in a live Aseprite
+window, following the rulebook it ships with.*
+
+</div>
+
+---
 
 One MCP server, one Aseprite extension, and a pixel-art rulebook the agent
 actually has to follow. Works with **Claude Code, Codex CLI, Gemini CLI, Cursor,
 VS Code and Windsurf** from the same one-line config.
-
-```bash
-npx @pebbly/aseprite-ai-artist install --all --agents
-npx @pebbly/aseprite-ai-artist install-extension
-# restart Aseprite, restart your agent
-```
-
-> **Requires Aseprite 1.3+** and Node 22.6+.
-
----
-
-## What it does
 
 > *"Draw me a 32×32 knight in the PICO-8 palette, then a 4-frame idle."*
 
@@ -25,6 +34,109 @@ The agent inspects the document, picks a palette, blocks in a silhouette,
 **looks at what it drew**, shades with proper hue shifting, rigs the character
 onto layers, animates, tags the cycle, validates, and tells you what it
 compromised on. In your window, undoable, one Ctrl+Z per edit.
+
+---
+
+## Install
+
+**Requires [Aseprite](https://www.aseprite.org/) 1.3 or newer and Node 22.6+.**
+Aseprite must have been run at least once, so that its config directory exists.
+
+### Step 1 — install the Aseprite extension
+
+```bash
+npx @pebbly/aseprite-ai-artist install-extension
+```
+
+Then **quit and reopen Aseprite**. The extension only dials out at startup, so
+an editor left running from before the install will never connect.
+
+### Step 2 — wire up your agent
+
+<details open>
+<summary><b>Claude Code</b> — install the plugin, not the bare server</summary>
+
+<br>
+
+```
+/plugin marketplace add with-pebbly/aseprite-ai-artist
+/plugin install aseprite-ai-artist
+```
+
+The plugin carries its own MCP server plus the `/pixel-*` skills, the specialist
+subagents and the preview hooks. **Do not also add the server by hand** — you
+would load the same eighteen tools twice, on every request.
+
+</details>
+
+<details>
+<summary><b>Codex CLI, Gemini CLI, Cursor, VS Code, Windsurf</b></summary>
+
+<br>
+
+```bash
+npx @pebbly/aseprite-ai-artist install codex      # ~/.codex/config.toml
+npx @pebbly/aseprite-ai-artist install gemini     # ~/.gemini/settings.json
+npx @pebbly/aseprite-ai-artist install cursor     # ~/.cursor/mcp.json
+npx @pebbly/aseprite-ai-artist install --all      # every client above
+```
+
+Existing config is backed up first. `--dry-run` shows the change without making
+it; `--project` writes into the repository instead of your home directory;
+`--agents` also appends a section to your `AGENTS.md`.
+
+</details>
+
+Then **restart the agent** so it picks up the new server.
+
+### Step 3 — check it
+
+```bash
+npx @pebbly/aseprite-ai-artist doctor
+```
+
+Ticks all the way down and you are ready. If a line is not a tick, it names
+which half is missing instead of making you guess.
+
+Per-client detail and troubleshooting: **[docs/INSTALL.md](docs/INSTALL.md)**.
+
+---
+
+## Which agent should do the drawing?
+
+Two separate things matter, and they do not point at the same client.
+
+**Integration** — how much of the craft a client can actually receive:
+
+| Client | Tools | `rules://` + `skill://` | MCP prompts | Slash commands, subagents, hooks |
+|---|:--:|:--:|:--:|:--:|
+| Claude Code | ✅ | ✅ | ✅ | ✅ via the plugin |
+| Codex CLI | ✅ | ✅ | ✖ | — |
+| Gemini CLI, Cursor, VS Code, Windsurf | ✅ | ✅ | varies | — |
+
+**Drawing ability** — hands-on impression rather than a benchmark, and the part
+that surprises people:
+
+- **Reasoning effort matters more than you would expect.** Placing pixels on a
+  32×32 grid is a spatial problem: the model has to hold a coordinate frame in
+  its head, keep a silhouette readable at that size, and notice when a shape has
+  gone wrong. Turn reasoning up before you blame the tool.
+- **Codex CLI on a high-reasoning setting is the best drawer we have used** — it
+  drew everything at the top of this page, working only from the brief and the
+  rulebook.
+- **Claude Code is the better planner and critic.** Palette construction, rig
+  layout, animation timing and the review pass come out noticeably stronger;
+  raw pixel placement at small canvas sizes is weaker.
+- If you have both, split the work: brief and review in Claude Code with
+  `pixel-brief` and `pixel-review`, execute the drawing passes in Codex. They
+  talk to the same live document through the same bridge, so they can take turns
+  on one sprite.
+
+The rulebook narrows the gap a long way — an agent that never reads a word of it
+still cannot casually widen your palette, because `draw` and `recolor` snap by
+perceptual distance and report every colour they moved. It does not close it.
+
+---
 
 ## What makes it different
 
@@ -51,43 +163,12 @@ mechanically before anything gets called finished.
 **It cannot quietly wreck your file.** When Aseprite is not attached, every tool
 refuses immediately with `doNotFallBackToDisk` rather than timing out — because
 an agent that "recovers" by editing the `.aseprite` file makes changes you never
-see and your next save overwrites.
+see, and your next save overwrites them.
 
 There is [a whole page](docs/RESEARCH.md) on the other projects in this space,
 what was taken from them, and where they are still better.
 
-## Install
-
-See **[docs/INSTALL.md](docs/INSTALL.md)** for per-client detail and
-troubleshooting.
-
-### Claude Code
-
-The plugin brings the `/pixel-*` skills, the specialist subagents and the hooks,
-not just the tools:
-
-```
-/plugin marketplace add with-pebbly/aseprite-ai-artist
-/plugin install aseprite-ai-artist
-```
-
-### Everything else
-
-```bash
-npx @pebbly/aseprite-ai-artist install codex      # ~/.codex/config.toml
-npx @pebbly/aseprite-ai-artist install gemini     # ~/.gemini/settings.json
-npx @pebbly/aseprite-ai-artist install cursor     # ~/.cursor/mcp.json
-npx @pebbly/aseprite-ai-artist install --all      # all of the above
-```
-
-Existing config is backed up first. `--dry-run` shows the change without making
-it. `--project` writes into the repository instead of your home directory.
-
-### Check it
-
-```bash
-npx @pebbly/aseprite-ai-artist doctor
-```
+---
 
 ## The tools
 
@@ -123,10 +204,7 @@ palette discipline, hue-shifted shading, silhouette and proportion, outlines and
 edges, animation timing, layer rigging, and a review checklist. Skills reference
 rules rather than restating them, so a rule has exactly one place to be wrong.
 
-The mechanical parts are enforced by the tools themselves: `draw` and `recolor`
-snap to the palette by perceptual distance and report every colour they moved,
-so an agent that never reads a word of the rulebook still cannot casually widen
-your palette.
+---
 
 ## How it works
 
@@ -147,19 +225,22 @@ Details in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** and the
 ```bash
 npm install
 npm run build
-npm test                                        # TypeScript: colour, render, bridge, MCP surface
-npm run test:extension                          # Lua handlers, headless, against a real sprite
+npm test                 # TypeScript: colour, render, bridge, MCP surface, CLI
+npm run test:pure        # Lua that needs no editor — also what CI runs
+npm run test:extension   # Lua handlers, headless, against a real sprite
 ```
 
-The Lua tests run the real command handlers inside `aseprite -b` against a real
-sprite — the only way to prove that side works without a human clicking.
+`test:extension` runs the real command handlers inside `aseprite -b` against a
+real sprite — the only way to prove that half works without a human clicking.
+It needs Aseprite installed, so CI cannot run it; `test:pure` is the part that
+runs anywhere.
 
 ## Security
 
 The bridge binds `127.0.0.1` only, on both ports. There is no remote surface and
-no authentication because there is nothing remote to authenticate. `run_lua` is
+no authentication, because there is nothing remote to authenticate. `run_lua` is
 arbitrary code execution inside the app holding your unsaved work, and is off
-unless you turn it on.
+unless you turn it on. Full threat model in [SECURITY.md](SECURITY.md).
 
 ## Licence
 

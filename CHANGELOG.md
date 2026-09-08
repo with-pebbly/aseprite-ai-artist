@@ -4,6 +4,17 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is
 [semver](https://semver.org/).
 
+## [0.1.2] — 2026-09-08
+
+### Fixed
+
+- **`preflight` failed on a freshly started editor.** 0.1.1's new boundary check
+  required `sprite` from `session.site`, but a Lua table cannot hold nil: with
+  no document open the key never reaches the wire at all, and the check could
+  not tell that apart from an extension too old to send it. The first call any
+  agent makes therefore failed, telling the user to reinstall a perfectly
+  current extension. It now requires `openSprites`, which is always present.
+
 ## [0.1.1] — 2026-09-08
 
 ### Fixed

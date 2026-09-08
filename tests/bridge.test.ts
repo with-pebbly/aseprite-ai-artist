@@ -211,3 +211,13 @@ test("a reply missing a field the caller needs is an error, not undefined", asyn
   c.close();
   plugin.close();
 });
+
+test("a field the extension leaves unset is not something a call may require", () => {
+  // Regression: `session.site` answers {sprite = nil} when no document is open,
+  // and a Lua table cannot hold nil — the key never reaches the wire. Requiring
+  // it turned the normal state of a freshly started editor into "your extension
+  // is out of date". `openSprites` is the field that is always there.
+  const asAnEmptyEditorAnswers = { openSprites: 0 };
+  assert.equal("sprite" in asAnEmptyEditorAnswers, false);
+  assert.equal("openSprites" in asAnEmptyEditorAnswers, true);
+});
