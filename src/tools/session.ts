@@ -101,6 +101,7 @@ export function registerSessionTools(server: McpServer, live: LiveClient): void 
         includeSlices: z.boolean().default(false),
       },
       outputSchema: {
+        id: z.number().int().describe("Stable id for this open document. Pass it back as '#<id>'."),
         name: z.string(),
         filename: z.string().nullish(),
         width: z.number().int(),
@@ -129,7 +130,7 @@ export function registerSessionTools(server: McpServer, live: LiveClient): void 
             from: z.number().int(),
             to: z.number().int(),
             direction: z.string(),
-            repeat: z.number().int().nullish(),
+            repeats: z.number().int().nullish().describe("Loop count; 0 means forever."),
           }),
         ),
         palette: z.array(z.string()).optional(),
@@ -192,6 +193,7 @@ export function registerSessionTools(server: McpServer, live: LiveClient): void 
         sprites: z
           .array(
             z.object({
+              id: z.number().int(),
               name: z.string(),
               filename: z.string().nullish(),
               width: z.number().int(),
@@ -202,6 +204,7 @@ export function registerSessionTools(server: McpServer, live: LiveClient): void 
           )
           .optional(),
         sprite: z.string().optional(),
+        id: z.number().int().optional().describe("Stable id of the affected document; pass it back as '#<id>'."),
         path: z.string().optional(),
         width: z.number().int().optional(),
         height: z.number().int().optional(),
@@ -230,7 +233,12 @@ export function registerSessionTools(server: McpServer, live: LiveClient): void 
           }
         }
         const data = await live.call<Record<string, unknown>>("sprite.manage", args);
-        return ok({ op: args.op, ...data });
+        const merged = { op: args.op, ...data };
+        // Hand back the unambiguous form: the display name of a fresh document
+        // is "Sprite" for every unsaved sprite at once, so an agent that feeds
+        // the name straight back can address the wrong one.
+        const hint = data.id === undefined ? "" : ` Refer to it as '#${String(data.id)}'.`;
+        return ok(merged, `${args.op}: ${String(data.sprite ?? "ok")}.${hint}`);
       } catch (err) {
         return fail(err);
       }

@@ -16,24 +16,14 @@ export const hexColor = z
   .regex(/^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/, "Expected #rrggbb or #rrggbbaa")
   .describe("Colour as #rrggbb or #rrggbbaa.");
 
-export const point = z.object({
-  x: z.number().int(),
-  y: z.number().int(),
-});
-
-export const rect = z.object({
-  x: z.number().int(),
-  y: z.number().int(),
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
-});
-
 /** Every tool that touches a document accepts this; omitted means "active". */
 export const targetShape = {
   sprite: z
     .string()
     .optional()
-    .describe("Sprite filename or id. Omit to use the sprite Aseprite has focused."),
+    .describe(
+      "Which sprite: its id as '#7' (what every result reports back, and the only unambiguous form — two unsaved documents are both called 'Sprite'), its filename, or its display name. Omit to use the sprite Aseprite has focused.",
+    ),
   layer: z.string().optional().describe("Layer name. Omit to use the active layer."),
   frame: z
     .number()
@@ -104,9 +94,3 @@ function compactSummary(structured: Record<string, unknown>): string {
   }
   return parts.length > 0 ? parts.join(" ") : "Done.";
 }
-
-/** Shared shape for "how many things did this change" results. */
-export const changeSummary = {
-  changed: z.number().int().describe("Number of items the call modified."),
-  sprite: z.string().describe("Sprite the change landed in."),
-};

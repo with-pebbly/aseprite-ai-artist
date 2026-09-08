@@ -7,7 +7,7 @@
  * reading four sets of docs.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, renameSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { packageRoot } from "./lib/version.js";
@@ -90,8 +90,7 @@ function installJson(client: ClientId, file: string, opts: InstallOptions): Inst
   }
 
   backup(file);
-  mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, JSON.stringify(next, null, 2) + "\n", "utf8");
+  writeAtomic(file, JSON.stringify(next, null, 2) + "\n");
   return { client, file, written: true };
 }
 
@@ -128,9 +127,8 @@ function installToml(file: string, opts: InstallOptions): InstallResult {
   }
 
   backup(file);
-  mkdirSync(path.dirname(file), { recursive: true });
   const separator = existing.length > 0 && !existing.endsWith("\n\n") ? "\n" : "";
-  writeFileSync(file, existing.trimEnd() + "\n" + separator + block, "utf8");
+  writeAtomic(file, existing.trimEnd() + "\n" + separator + block);
   return { client: "codex", file, written: true };
 }
 
@@ -160,8 +158,7 @@ export function mergeAgentsFile(target: string, dryRun: boolean): { written: boo
 
   if (dryRun) return { written: false, file: target };
   backup(target);
-  mkdirSync(path.dirname(target), { recursive: true });
-  writeFileSync(target, next, "utf8");
+  writeAtomic(target, next);
   return { written: true, file: target };
 }
 
@@ -174,6 +171,32 @@ function readJson(file: string): Record<string, unknown> {
     throw new Error(
       `${file} is not valid JSON, so it cannot be edited safely. Fix or move it, then retry. (${(err as Error).message})`,
     );
+  }
+}
+
+/**
+ * Write through a sibling temp file and rename over the target.
+ *
+ * `~/.claude.json` is ~128KB and holds Claude Code's own project list, session
+ * and auth state. A plain writeFileSync that dies part-way — full disk, killed
+ * process — leaves that truncated and the user's whole setup broken. A rename
+ * on the same filesystem is atomic, so the file is either the old one or the
+ * new one, never half of either.
+ */
+function writeAtomic(file: string, contents: string): void {
+  const dir = path.dirname(file);
+  mkdirSync(dir, { recursive: true });
+  const temp = path.join(dir, `.${path.basename(file)}.${process.pid}.tmp`);
+  try {
+    writeFileSync(temp, contents, "utf8");
+    renameSync(temp, file);
+  } catch (err) {
+    try {
+      unlinkSync(temp);
+    } catch {
+      /* the temp file may never have been created */
+    }
+    throw err;
   }
 }
 

@@ -235,16 +235,13 @@ export function registerDrawTools(server: McpServer, live: LiveClient): void {
     {
       title: "Transform",
       description:
-        "Move, flip, rotate or scale pixels. Ops: 'translate', 'flip', 'rotate', 'scale', 'outline', 'crop_to_content'. " +
+        "Move, flip, rotate or scale pixels on ONE cel — the target layer's image on the target frame. Ops: 'translate', 'flip', 'rotate', 'scale', 'outline', 'crop_to_content'. " +
+        "To transform part of a cel, crop the region out with `draw` op 'blit' first; there is no selection-scoped transform. " +
         "Rotation is only clean at 90° multiples — arbitrary angles destroy pixel art, so anything else needs `allowLossy`. " +
         "Scaling is nearest-neighbour and integer-only for the same reason.",
       inputSchema: {
         op: z.enum(["translate", "flip", "rotate", "scale", "outline", "crop_to_content"]),
         ...targetShape,
-        scope: z
-          .enum(["selection", "cel", "layer", "sprite"])
-          .default("selection")
-          .describe("What the transform applies to. 'selection' falls back to the cel when nothing is selected."),
         dx: z.number().int().default(0),
         dy: z.number().int().default(0),
         axis: z.enum(["horizontal", "vertical"]).optional().describe("For 'flip'."),
@@ -260,7 +257,6 @@ export function registerDrawTools(server: McpServer, live: LiveClient): void {
       outputSchema: {
         sprite: z.string(),
         op: z.string(),
-        scope: z.string(),
         pixelsChanged: z.number().int(),
         bounds: z
           .object({ x: z.number().int(), y: z.number().int(), width: z.number().int(), height: z.number().int() })

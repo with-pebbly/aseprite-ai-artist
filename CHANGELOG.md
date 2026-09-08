@@ -6,6 +6,70 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed — 2026-09-08 multi-expert audit
+
+Six reviewers plus two live Codex CLI runs; every item below was reproduced
+before it was fixed and has a regression test that fails without the fix.
+
+- **Closed polylines lost their closing edge.** The outline loop stopped one
+  short of the wrap the fill loop already did, so a "closed" triangle shipped
+  with one side missing and the call reported success.
+- **Thick lines were silently clipped.** The bounding box ignored `thickness`,
+  so the cel was grown to the endpoints only and the rest of the brush was
+  dropped — a 7×7 stamp landing one pixel, reported as success.
+- **Fuzzy tile packing merged unrelated tiles on indexed sprites.** The distance
+  function read RGB channels out of palette indices. It now refuses non-RGB
+  sprites instead of guessing.
+- **`transform` op `rotate` with `angle: 0` reported a full-canvas change** for
+  an operation that touched nothing, breaking idempotency checks.
+- **`validate` never ran its `outline` or `banding` checks.** Both were in the
+  schema and in the handler's own default set, and no branch read either — the
+  tool answered "Clean." without running them. Both are now implemented.
+- **`cel` op `list` always reported `linked: false`**, and `frame` op
+  `duplicate` with `linkCels` never actually linked (it called a command that
+  does not exist in Aseprite 1.3).
+- **`draw` op `gradient` ignored `dither`**, and `diagonal` and `radial`
+  silently rendered as `vertical`. All four directions and the dither flag now
+  work.
+- **`transform`'s `scope` parameter did nothing.** Removed rather than
+  half-implemented; transforms act on one cel, and the docs now say so.
+- **`tag`'s `repeat` was ignored.** The schema said `repeat` on input and
+  output while Aseprite's property is `repeats`, so loop counts were silently
+  dropped. Renamed to `repeats` on both sides.
+- **`sprite_manage` op `new` returned an identifier that could not be used.** It
+  answered `"untitled"` while the sprite was called `"Sprite"`, so feeding a
+  tool's own output into the next call failed. Every result now carries a stable
+  `id`, and two unsaved documents are no longer ambiguous.
+- **Previews were capped far below a readable size.** The upscale factor was
+  capped at 16, rendering a 16px sprite at 256px — the case where upscaling
+  matters most. The bound is now on output size (~2048px), so small sprites
+  reach the documented ~1024px.
+- **`selectionOnly` silently widened to the whole cel** when nothing was
+  selected. It now refuses.
+- **Text grids collided past 71 colours**, quietly misreporting which colour was
+  where in the tool used to verify edits. It now refuses.
+- **Config writes were not atomic.** A partial write to `~/.claude.json` (100KB+
+  of Claude Code's own state) would have broken the user's whole setup. Writes
+  go through a temp file and a rename.
+- **A dropped bridge left in-flight calls waiting out their 20s timeout**, which
+  reads to an agent as "slow" rather than "disconnected". They now fail
+  immediately, and a bridge that dies after being spawned can be respawned.
+- **Non-`EADDRINUSE` bind failures were reported as "another bridge owns this
+  port"**, sending users after a process that does not exist.
+- **`run_lua` could leave Lua's global `print` hijacked** for the rest of the
+  Aseprite session if the transaction threw.
+- **The Claude Code plugin could not start on Windows.** Its MCP `command`
+  pointed at a bash script, and Windows does not interpret `#!`. The launcher is
+  now Node.
+- **`package.json` claimed the 2026-07-28 spec**, contradicting ADR-0004's
+  decision to target 2025-11-25. `engines.node` also promised 20.10 while the
+  test script needs 22.6.
+
+### Added
+
+- `SECURITY.md` — threat model, the localhost bridge's real exposure, what
+  `install` touches, and the `run_lua` gate.
+
 ## [0.1.0] — 2026-09-08
 
 First release.

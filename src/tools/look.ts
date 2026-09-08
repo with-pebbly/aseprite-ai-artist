@@ -51,9 +51,11 @@ export function registerLookTools(server: McpServer, live: LiveClient): void {
           .number()
           .int()
           .positive()
-          .max(16)
+          .max(128)
           .optional()
-          .describe("Integer upscale for image ops. Omitted means auto."),
+          .describe(
+            "Integer upscale for image ops, 1-128 (clamped so the output stays under ~2048px). Omit it — the automatic choice targets a ~1024px long edge, which is what a vision model can actually read.",
+          ),
       },
       outputSchema: {
         op: z.string(),

@@ -30,8 +30,6 @@ export interface BridgeOptions {
   pluginPort?: number;
   controlPort?: number;
   version: string;
-  /** Exit when the last control client disconnects and no plugin is attached. */
-  idleExitMs?: number;
   log?: (msg: string) => void;
 }
 
@@ -221,13 +219,28 @@ function send(socket: WebSocket, payload: unknown): void {
   }
 }
 
+export class BridgeBindError extends Error {
+  readonly port: number;
+  constructor(port: number, cause: NodeJS.ErrnoException) {
+    super(`Could not bind 127.0.0.1:${port}: ${cause.code ?? cause.message}`);
+    this.name = "BridgeBindError";
+    this.port = port;
+  }
+}
+
+/**
+ * Resolves the server on success, or null when the port is already taken —
+ * which is the normal "a bridge already runs" outcome. Any OTHER bind failure
+ * rejects: reporting an EACCES as "another bridge owns this port" sends the
+ * user looking for a process that does not exist.
+ */
 function listen(port: number): Promise<WebSocketServer | null> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = new WebSocketServer({ host: "127.0.0.1", port });
     const onError = (err: NodeJS.ErrnoException) => {
       server.removeListener("listening", onListening);
       if (err.code === "EADDRINUSE") resolve(null);
-      else resolve(null);
+      else reject(new BridgeBindError(port, err));
     };
     const onListening = () => {
       server.removeListener("error", onError);

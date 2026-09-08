@@ -513,6 +513,225 @@ check("tileset export refuses blob47 without a full blob set", function()
   app.sprite = sprite
 end)
 
+-- ── regressions from the 2026-09-08 multi-expert audit ──────────────────────
+
+check("a closed polyline draws its closing edge", function()
+  -- The outline loop stopped at #points - 1 while the fill loop wrapped, so a
+  -- "closed" triangle shipped with one side missing and reported success.
+  local tri = Sprite(16, 16, ColorMode.RGB)
+  app.sprite = tri
+  local ok = A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
+    { kind = "polyline", closed = true, color = "#ff0000",
+      points = { { x = 0, y = 0 }, { x = 10, y = 0 }, { x = 10, y = 10 } } } } } })
+  assert(ok.ok, "draw failed: " .. tostring(ok.error and ok.error.message))
+  local region = call("pixels.read", { region = { x = 0, y = 0, width = 16, height = 16 } })
+  -- (5,5) sits on the closing diagonal (10,10) -> (0,0).
+  local idx = region.grid[5 * 16 + 5 + 1]
+  assert(idx ~= 0, "the closing edge is missing: (5,5) is transparent")
+  assertEq(region.colors[idx + 1], "#ff0000", "colour on the closing edge")
+  tri:close(); app.sprite = sprite
+end)
+
+check("a thick line paints its whole brush into a tight cel", function()
+  -- op_bounds ignored thickness, so the cel was grown to the endpoints only and
+  -- Draw.pixel silently clipped the rest of the stamp.
+  local dot = Sprite(32, 32, ColorMode.RGB)
+  app.sprite = dot
+  A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
+    { kind = "pixels", color = "#ffffff", points = { { x = 16, y = 16 } } } } } })
+  local res = A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
+    { kind = "line", color = "#ff0000", from = { x = 16, y = 16 }, to = { x = 16, y = 16 },
+      thickness = 7 } } } })
+  assert(res.ok, "draw failed: " .. tostring(res.error and res.error.message))
+  assertEq(res.data.pixelsChanged, 49, "a 7x7 brush must land all 49 pixels")
+  dot:close(); app.sprite = sprite
+end)
+
+check("fuzzy tile packing refuses a non-RGB sprite", function()
+  -- cell_distance reads RGB channels; on an indexed sprite those are palette
+  -- indices, and comparing them merged two maximally different tiles into one.
+  local idx = Sprite(32, 16, ColorMode.INDEXED)
+  app.sprite = idx
+  local reply = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
+    op = "pack", tileWidth = 16, tileHeight = 16, tolerance = 50 } })
+  assert(not reply.ok, "tolerance on an indexed sprite must be refused")
+  assertEq(reply.error.code, "invalid_args", "error code")
+  assert(reply.error.message:find("RGB"), "message should name the requirement")
+  idx:close(); app.sprite = sprite
+end)
+
+check("rotate by 0 reports that it changed nothing", function()
+  -- `changed` was set after the branch chain, so a no-op claimed a full-canvas
+  -- change and broke any agent using pixelsChanged to verify idempotency.
+  local rot = Sprite(8, 8, ColorMode.RGB)
+  app.sprite = rot
+  A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
+    { kind = "pixels", color = "#00ff00", points = { { x = 1, y = 1 } } } } } })
+  local zero = A.handleCommand({ id = "t", cmd = "transform.apply", args = { op = "rotate", angle = 0 } })
+  assert(zero.ok, "rotate 0 failed: " .. tostring(zero.error and zero.error.message))
+  assertEq(zero.data.pixelsChanged, 0, "a 0-degree rotation changes nothing")
+  local ninety = A.handleCommand({ id = "t", cmd = "transform.apply", args = { op = "rotate", angle = 90 } })
+  assert(ninety.ok, "rotate 90 failed: " .. tostring(ninety.error and ninety.error.message))
+  assert(ninety.data.pixelsChanged > 0, "a 90-degree rotation does change something")
+  rot:close(); app.sprite = sprite
+end)
+
+check("validate actually runs its outline and banding checks", function()
+  -- Both were advertised in the schema AND in the handler's own default set,
+  -- but no branch read them: validate answered "Clean." without running either.
+  local v = Sprite(24, 24, ColorMode.RGB)
+  app.sprite = v
+  -- A filled block with a deliberately broken outline: one edge pixel recoloured.
+  A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
+    { kind = "rect", rect = { x = 4, y = 4, width = 16, height = 16 },
+      color = "#000000", fill = "#ff004d" },
+    { kind = "pixels", color = "#29adff", points = { { x = 10, y = 4 } } } } } })
+  local report = call("validate.run", { checks = { "outline" } })
+  local hit = false
+  for _, f in ipairs(report.findings) do
+    if f.check == "outline" then hit = true end
+  end
+  assert(hit, "expected an outline finding for a broken outline")
+
+  local banding = call("validate.run", { checks = { "banding" } })
+  local band = false
+  for _, f in ipairs(banding.findings) do
+    if f.check == "banding" then band = true end
+  end
+  assert(band, "expected a banding finding for a 16px straight colour boundary")
+  v:close(); app.sprite = sprite
+end)
+
+check("cel list reports linked cels as linked", function()
+  -- `linked = c.image ~= nil and false or false` collapsed to a constant false,
+  -- so the tool always answered "nothing is linked".
+  local anim = Sprite(8, 8, ColorMode.RGB)
+  app.sprite = anim
+  A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
+    { kind = "pixels", color = "#ffffff", points = { { x = 0, y = 0 } } } } } })
+  local before = call("cel.apply", { op = "list" })
+  for _, c in ipairs(before.cels) do assertEq(c.linked, false, "a lone cel is not linked") end
+
+  local dup = A.handleCommand({ id = "t", cmd = "frame.apply", args = { op = "duplicate", frame = 1, linkCels = true } })
+  assert(dup.ok, "duplicate failed: " .. tostring(dup.error and dup.error.message))
+  assertEq(dup.data.frameCount, 2, "frame added")
+  local after = call("cel.apply", { op = "list" })
+  local linked = 0
+  for _, c in ipairs(after.cels) do if c.linked then linked = linked + 1 end end
+  assert(linked >= 2, "expected the duplicated linked cels to report linked=true, got " .. linked)
+  anim:close(); app.sprite = sprite
+end)
+
+check("gradient honours dither and every declared direction", function()
+  -- `dither` was declared in the schema and never read, and `diagonal`/`radial`
+  -- both silently fell through to the vertical branch.
+  local g = Sprite(16, 16, ColorMode.RGB)
+  app.sprite = g
+  local function grid(direction, dither)
+    A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
+      { kind = "clear" },
+      { kind = "gradient", rect = { x = 0, y = 0, width = 16, height = 16 },
+        from = "#000000", to = "#ffffff", steps = 4,
+        direction = direction, dither = dither } } } })
+    local r = call("pixels.read", { region = { x = 0, y = 0, width = 16, height = 16 } })
+    local out = {}
+    for i, idx in ipairs(r.grid) do out[i] = r.colors[idx + 1] end
+    return out
+  end
+
+  local vertical = grid("vertical", false)
+  local horizontal = grid("horizontal", false)
+  local diagonal = grid("diagonal", false)
+  local radial = grid("radial", false)
+
+  local function differs(a, b)
+    for i = 1, #a do if a[i] ~= b[i] then return true end end
+    return false
+  end
+  assert(differs(vertical, horizontal), "horizontal must differ from vertical")
+  assert(differs(vertical, diagonal), "diagonal must differ from vertical")
+  assert(differs(vertical, radial), "radial must differ from vertical")
+
+  local hard = grid("vertical", false)
+  local dithered = grid("vertical", true)
+  assert(differs(hard, dithered), "dither=true must change the result")
+  -- A dithered band boundary mixes two colours within one row; a hard one does not.
+  local function rowColours(cells, row)
+    local seen = {}
+    for x = 0, 15 do seen[cells[row * 16 + x + 1]] = true end
+    local n = 0
+    for _ in pairs(seen) do n = n + 1 end
+    return n
+  end
+  local mixed = false
+  for row = 0, 15 do if rowColours(dithered, row) > 1 then mixed = true end end
+  assert(mixed, "a dithered vertical gradient must mix colours within a row")
+  g:close(); app.sprite = sprite
+end)
+
+check("a new sprite reports an identifier that resolves", function()
+  -- op=new answered "untitled", which find_sprite could not resolve, so feeding
+  -- a tool's own returned identifier into the next call failed immediately.
+  local made = call("sprite.manage", { op = "new", width = 8, height = 8, colorMode = "rgb" })
+  assert(made.id, "op=new must report a stable id")
+  local info = call("sprite.info", { sprite = "#" .. tostring(made.id), includePalette = false })
+  assertEq(info.width, 8, "the reported id must resolve back to the same sprite")
+  assertEq(info.id, made.id, "ids must round-trip")
+  -- The display name must resolve too, when it is unambiguous.
+  local byName = A.handleCommand({ id = "t", cmd = "sprite.info",
+    args = { sprite = made.sprite, includePalette = false } })
+  assert(byName.ok or byName.error.message:find("matches"),
+    "a name lookup must either resolve or say the name is ambiguous, not 'no match'")
+  call("sprite.manage", { op = "close", sprite = "#" .. tostring(made.id) })
+  app.sprite = sprite
+end)
+
+check("selectionOnly refuses rather than widening to the whole cel", function()
+  local sel = Sprite(16, 16, ColorMode.RGB)
+  app.sprite = sel
+  A.handleCommand({ id = "t", cmd = "select.apply", args = { op = "none" } })
+  local reply = A.handleCommand({ id = "t", cmd = "draw.batch", args = {
+    selectionOnly = true, paletteLock = false,
+    ops = { { kind = "rect", rect = { x = 0, y = 0, width = 16, height = 16 },
+              color = "#ff0000", fill = "#ff0000" } } } })
+  assert(not reply.ok, "selectionOnly with no selection must refuse, not repaint everything")
+  assertEq(reply.error.code, "invalid_args", "error code")
+  sel:close(); app.sprite = sprite
+end)
+
+check("stamping onto a brand-new tilemap layer creates a TILEMAP cel", function()
+  -- The known-bug regression test only ever stamped onto a layer that `pack`
+  -- had already given a cel, so it never took the branch that was the fix.
+  local t = Sprite(32, 32, ColorMode.RGB)
+  app.sprite = t
+  local made = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
+    op = "create_layer", name = "terrain", tileWidth = 16, tileHeight = 16 } })
+  assert(made.ok, "create_layer failed: " .. tostring(made.error and made.error.message))
+
+  local layer = nil
+  for _, l in ipairs(t.layers) do if l.name == "terrain" then layer = l end end
+  assert(layer, "tilemap layer not found")
+  assert(layer:cel(1) == nil, "precondition: the new tilemap layer has no cel yet")
+
+  -- Give the tileset one real tile to stamp.
+  local ts = layer.tileset
+  local tile = t:newTile(ts)
+  local img = Image(16, 16, ColorMode.RGB)
+  img:clear(app.pixelColor.rgba(255, 0, 77, 255))
+  tile.image = img
+
+  local stamped = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
+    op = "stamp", layer = "terrain", tiles = { { x = 0, y = 0, tile = tile.index } } } })
+  assert(stamped.ok, "stamp failed: " .. tostring(stamped.error and stamped.error.message))
+  assertEq(stamped.data.tileCount, 1, "one tile placed")
+
+  local cel = layer:cel(1)
+  assert(cel, "stamp must have created a cel")
+  assertEq(tostring(cel.image.colorMode), tostring(ColorMode.TILEMAP), "cel must be a TILEMAP image")
+  assertEq(app.pixelColor.tileI(cel.image:getPixel(0, 0)), tile.index, "the stamped tile index")
+  t:close(); app.sprite = sprite
+end)
+
 check("json encoder emits arrays for empty tables", function()
   assertEq(A.encodeJson({}), "[]", "empty table")
   assertEq(A.encodeJson({ 1, 2 }), "[1,2]", "array")

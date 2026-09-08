@@ -13,7 +13,20 @@ npx @with-pebbly/aseprite-ai-artist install-extension
 # restart Aseprite, restart your agent
 ```
 
-> **Requires Aseprite 1.3+** and Node 20.10+.
+> [!IMPORTANT]
+> **Not published to npm yet**, so the `npx` line above does not work today —
+> it is what the install flow will be. Until it ships, clone and build:
+>
+> ```bash
+> git clone https://github.com/with-pebbly/aseprite-ai-artist
+> cd aseprite-ai-artist && npm install && npm run build
+> node dist/cli.js install --all --agents      # then edit the written config
+> node dist/cli.js install-extension           # to `node <abs-path>/dist/cli.js serve`
+> ```
+>
+> Claude Code users can skip that: the plugin install below builds itself.
+
+> **Requires Aseprite 1.3+** and Node 22.6+.
 
 ---
 

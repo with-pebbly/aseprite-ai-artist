@@ -54,9 +54,18 @@ export function renderAscii(region: PixelRegion, opts: AsciiOptions = {}): Ascii
   const glyphFor = new Map<number, string>();
   glyphFor.set(0, TRANSPARENT_GLYPH);
 
+  const distinct = region.colors.length - 1;
+  if (distinct > GLYPHS.length) {
+    throw new Error(
+      `Region has ${distinct} distinct colours but the text grid only has ${GLYPHS.length} glyphs. ` +
+        `Past that, different colours would share a glyph and the grid would lie about what is where. ` +
+        `Read a smaller region, or use the preview op instead.`,
+    );
+  }
+
   let next = 0;
   for (let i = 1; i < region.colors.length; i++) {
-    const glyph = GLYPHS[next++] ?? "?";
+    const glyph = GLYPHS[next++]!;
     glyphFor.set(i, glyph);
     legend[glyph] = region.colors[i] ?? "#000000";
   }
@@ -144,7 +153,13 @@ export function renderDiff(before: PixelRegion, after: PixelRegion): DiffView {
       }
       let glyph = glyphForColor.get(afterColor);
       if (!glyph) {
-        glyph = GLYPHS[next++] ?? "?";
+        if (next >= GLYPHS.length) {
+          throw new Error(
+            `More than ${GLYPHS.length} distinct colours appear in this diff, so glyphs would start ` +
+              `colliding and the grid would misreport which colour landed where. Diff a smaller region.`,
+          );
+        }
+        glyph = GLYPHS[next++]!;
         glyphForColor.set(afterColor, glyph);
         legend[glyph] = afterColor;
       }
@@ -164,11 +179,16 @@ export function renderDiff(before: PixelRegion, after: PixelRegion): DiffView {
 /**
  * Pick an integer upscale factor that lands a sprite's long edge near `target`.
  * Nearest-neighbour only — any smoothing destroys the thing being reviewed.
+ *
+ * The bound is on the OUTPUT size, not the factor. Capping the factor at 16 —
+ * as this once did — renders an 8px sprite at 128px and a 16px one at 256px,
+ * which are precisely the cases where a vision model is otherwise guessing.
  */
-export function previewScale(width: number, height: number, target = 1024, cap = 16): number {
+export function previewScale(width: number, height: number, target = 1024, maxEdge = 2048): number {
   const longEdge = Math.max(width, height, 1);
-  const scale = Math.max(1, Math.round(target / longEdge));
-  return Math.min(scale, cap);
+  const wanted = Math.max(1, Math.round(target / longEdge));
+  const byOutput = Math.max(1, Math.floor(maxEdge / longEdge));
+  return Math.min(wanted, byOutput);
 }
 
 /** Grid layout for a filmstrip: as close to square as whole cells allow. */

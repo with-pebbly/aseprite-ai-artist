@@ -172,18 +172,49 @@ end
 -- back to whatever the user has focused, and restores focus when it is done.
 --------------------------------------------------------------------------------
 
+local function sprite_display_name(s)
+  local base = app.fs.fileName(s.filename or "")
+  return base ~= "" and base or "untitled"
+end
+
+--- Resolve a sprite from an id ("#7" or 7), a full path, or a display name.
+--- Ids are what every result reports back, because two unsaved documents both
+--- answer to "Sprite" and a name lookup silently picks whichever comes first.
 local function find_sprite(name)
   if name == nil or name == "" then
     local s = app.sprite
     if not s then fault("no_active_sprite", "No sprite is open in Aseprite.") end
     return s
   end
-  for _, s in ipairs(app.sprites) do
-    if s.filename == name then return s end
-    local base = app.fs.fileName(s.filename or "")
-    if base == name then return s end
+
+  local wanted_id = tonumber(tostring(name):match("^#?(%d+)$"))
+  if wanted_id then
+    for _, s in ipairs(app.sprites) do
+      if s.id == wanted_id then return s end
+    end
   end
-  fault("invalid_args", "No open sprite matches '" .. tostring(name) .. "'.")
+
+  local matches = {}
+  for _, s in ipairs(app.sprites) do
+    if s.filename == name or sprite_display_name(s) == name
+       or sprite_display_name(s) == name then
+      matches[#matches + 1] = s
+    end
+  end
+  if #matches == 1 then return matches[1] end
+  if #matches > 1 then
+    local ids = {}
+    for _, s in ipairs(matches) do ids[#ids + 1] = "#" .. tostring(s.id) end
+    fault("invalid_args", "'" .. tostring(name) .. "' matches " .. #matches ..
+      " open sprites (" .. table.concat(ids, ", ") .. "). Pass one of those ids instead.")
+  end
+
+  local open = {}
+  for _, s in ipairs(app.sprites) do
+    open[#open + 1] = sprite_display_name(s) .. " (#" .. tostring(s.id) .. ")"
+  end
+  fault("invalid_args", "No open sprite matches '" .. tostring(name) .. "'. Open: " ..
+    (#open > 0 and table.concat(open, ", ") or "(none)") .. ".")
 end
 
 local function find_layer(sprite, name)
@@ -244,6 +275,19 @@ end
 --------------------------------------------------------------------------------
 -- Cel access
 --------------------------------------------------------------------------------
+
+--- True when this cel shares its image with another frame's cel on the same
+--- layer, which is what Aseprite's "linked cel" is.
+local function is_linked_cel(layer, cel)
+  local id = cel.image and cel.image.id
+  if not id then return false end
+  for _, other in ipairs(layer.cels) do
+    if other.frameNumber ~= cel.frameNumber and other.image and other.image.id == id then
+      return true
+    end
+  end
+  return false
+end
 
 local function get_cel(sprite, layer, frame, create)
   local cel = layer:cel(frame)
@@ -438,7 +482,7 @@ function Draw.ellipse(img, ox, oy, r, outline, fill)
   return count
 end
 
-function Draw.polygon(img, ox, oy, points, outline, fill)
+function Draw.polygon(img, ox, oy, points, outline, fill, closed)
   local count = 0
   if fill and #points >= 3 then
     local miny, maxy = math.huge, -math.huge
@@ -463,8 +507,14 @@ function Draw.polygon(img, ox, oy, points, outline, fill)
     end
   end
   if outline then
-    for i = 1, #points - 1 do
-      count = count + Draw.line(img, ox, oy, points[i].x, points[i].y, points[i + 1].x, points[i + 1].y, outline, 1)
+    -- Wrap the same way the fill loop above does. Stopping at #points - 1 draws
+    -- every edge except the one that closes the shape, so a "closed" triangle
+    -- shipped with one side missing and the call still reported success.
+    local last = closed and #points or (#points - 1)
+    for i = 1, last do
+      local a = points[i]
+      local b = points[i % #points + 1]
+      count = count + Draw.line(img, ox, oy, a.x, a.y, b.x, b.y, outline, 1)
     end
   end
   return count
@@ -625,7 +675,8 @@ local H = {}
 
 local function sprite_summary(s)
   return {
-    name = app.fs.fileName(s.filename or "") ~= "" and app.fs.fileName(s.filename) or "untitled",
+    id = s.id,
+    name = sprite_display_name(s),
     filename = s.filename ~= "" and s.filename or nil,
     width = s.width,
     height = s.height,
@@ -688,7 +739,8 @@ H["sprite.info"] = function(args)
   end
 
   local result = {
-    name = app.fs.fileName(s.filename or "") ~= "" and app.fs.fileName(s.filename) or "untitled",
+    id = s.id,
+    name = sprite_display_name(s),
     filename = s.filename ~= "" and s.filename or nil,
     width = s.width,
     height = s.height,
@@ -751,21 +803,21 @@ H["sprite.manage"] = function(args)
     local mode = ({ rgb = ColorMode.RGB, grayscale = ColorMode.GRAY, indexed = ColorMode.INDEXED })[args.colorMode or "rgb"]
     local s = Sprite(need(args.width, "width"), need(args.height, "height"), mode)
     app.sprite = s
-    return { sprite = "untitled", width = s.width, height = s.height }
+    return { sprite = sprite_display_name(s), id = s.id, width = s.width, height = s.height }
   end
 
   if op == "open" then
     local s = app.open(need(args.path, "path"))
     if not s then fault("aseprite_error", "Aseprite could not open '" .. args.path .. "'.") end
     app.sprite = s
-    return { sprite = app.fs.fileName(s.filename), width = s.width, height = s.height }
+    return { sprite = sprite_display_name(s), id = s.id, width = s.width, height = s.height }
   end
 
   local s = find_sprite(args.sprite)
 
   if op == "activate" then
     app.sprite = s
-    return { sprite = app.fs.fileName(s.filename or "") }
+    return { sprite = sprite_display_name(s), id = s.id }
   end
 
   if op == "save" then
@@ -773,18 +825,19 @@ H["sprite.manage"] = function(args)
       fault("invalid_args", "This sprite has never been saved. Use op 'save_as' with a path.")
     end
     preserving_site(function() app.sprite = s; app.command.SaveFile() end)
-    return { sprite = app.fs.fileName(s.filename), path = s.filename }
+    return { sprite = sprite_display_name(s), id = s.id, path = s.filename }
   end
 
   if op == "save_as" then
     s:saveAs(need(args.path, "path"))
-    return { sprite = app.fs.fileName(s.filename), path = s.filename }
+    return { sprite = sprite_display_name(s), id = s.id, path = s.filename }
   end
 
   if op == "close" then
-    local name = app.fs.fileName(s.filename or "")
+    local name = sprite_display_name(s)
+    local id = s.id
     s:close()
-    return { sprite = name }
+    return { sprite = name, id = id }
   end
 
   if op == "resize_canvas" then
@@ -796,7 +849,7 @@ H["sprite.manage"] = function(args)
     transact("AI: resize canvas", function()
       s:crop(-dx, -dy, w, h)
     end)
-    return { sprite = app.fs.fileName(s.filename or ""), width = s.width, height = s.height }
+    return { sprite = sprite_display_name(s), width = s.width, height = s.height }
   end
 
   if op == "set_properties" then
@@ -815,7 +868,7 @@ H["sprite.manage"] = function(args)
         end
       end
     end)
-    return { sprite = app.fs.fileName(s.filename or ""), width = s.width, height = s.height }
+    return { sprite = sprite_display_name(s), width = s.width, height = s.height }
   end
 
   fault("unsupported_command", "sprite.manage does not support op '" .. tostring(op) .. "'.")
@@ -836,10 +889,20 @@ end
 -- resize. Both operate on a throwaway copy so the user's document is untouched.
 --------------------------------------------------------------------------------
 
+--- Integer upscale for a preview. Bounded by the OUTPUT edge, not by the
+--- factor: capping the factor at 16 rendered a 16px sprite at 256px and an 8px
+--- one at 128px, which are precisely the sizes a vision model cannot read.
+local PREVIEW_TARGET_EDGE = 1024
+local PREVIEW_MAX_EDGE = 2048
+
 local function pick_scale(w, h, requested)
-  if requested and requested > 0 then return math.min(math.floor(requested), 16) end
   local long = math.max(w, h, 1)
-  return math.max(1, math.min(16, math.floor(1024 / long + 0.5)))
+  local by_output = math.max(1, math.floor(PREVIEW_MAX_EDGE / long))
+  if requested and requested > 0 then
+    return math.max(1, math.min(math.floor(requested), by_output))
+  end
+  local wanted = math.max(1, math.floor(PREVIEW_TARGET_EDGE / long + 0.5))
+  return math.min(wanted, by_output)
 end
 
 H["look.preview"] = function(args)
@@ -874,7 +937,7 @@ H["look.preview"] = function(args)
   end)
 
   return {
-    sprite = app.fs.fileName(s.filename or ""),
+    sprite = sprite_display_name(s),
     sourceWidth = region.width, sourceHeight = region.height,
     width = region.width * scale, height = region.height * scale,
     scale = scale,
@@ -918,7 +981,7 @@ H["look.filmstrip"] = function(args)
   end)
 
   return {
-    sprite = app.fs.fileName(s.filename or ""),
+    sprite = sprite_display_name(s),
     frames = count, scale = scale,
     width = stripW * scale, height = stripH * scale,
   }
@@ -938,8 +1001,21 @@ local function op_bounds(sprite, op)
     return { x = minx, y = miny, width = maxx - minx + 1, height = maxy - miny + 1 }
   end
 
+  -- A brush wider than 1px paints beyond its endpoints. Without this padding the
+  -- cel is grown to the endpoints only, and Draw.pixel silently clips the rest
+  -- of the stamp — reporting success and a bounding box that hides the loss.
+  local function pad(box, amount)
+    if amount <= 0 then return box end
+    return {
+      x = box.x - amount, y = box.y - amount,
+      width = box.width + amount * 2, height = box.height + amount * 2,
+    }
+  end
+
   if op.kind == "pixels" then return pts(op.points) end
-  if op.kind == "line" then return pts({ op.from, op.to }) end
+  if op.kind == "line" then
+    return pad(pts({ op.from, op.to }), math.floor((op.thickness or 1) / 2))
+  end
   if op.kind == "polyline" then return pts(op.points) end
   if op.kind == "rect" or op.kind == "ellipse" or op.kind == "dither" or op.kind == "gradient" then
     return op.rect
@@ -1000,7 +1076,12 @@ H["draw.batch"] = function(args)
   end
 
   local selection = args.selectionOnly and s.selection or nil
-  if selection and selection.isEmpty then selection = nil end
+  if args.selectionOnly and (not selection or selection.isEmpty) then
+    fault("invalid_args",
+      "selectionOnly was set but nothing is selected. Falling back to the whole cel would " ..
+      "repaint far more than you asked for, so this refuses instead. Make a selection with " ..
+      "the select tool first, or drop selectionOnly.")
+  end
 
   transact(args.label and ("AI: " .. args.label) or "AI: draw", function()
     local cel = get_cel(s, layer, frame, args.createCel ~= false)
@@ -1046,7 +1127,7 @@ H["draw.batch"] = function(args)
         local points = op.points
         if op.closed then
           changed = changed + Draw.polygon(img, ox, oy, points, resolve(op.color),
-            op.fill and resolve(op.fill) or nil)
+            op.fill and resolve(op.fill) or nil, true)
         else
           for i = 1, #points - 1 do
             changed = changed + Draw.line(img, ox, oy,
@@ -1085,25 +1166,55 @@ H["draw.batch"] = function(args)
         local from = hex_to_color(op.from)
         local to = hex_to_color(op.to)
         local r = op.rect
+        local direction = op.direction or "vertical"
+
+        -- One colour per band, resolved once: resolve() also reports palette
+        -- snapping, and doing it per pixel would flood that report.
+        local band = {}
         for i = 0, steps - 1 do
           local t = steps == 1 and 0 or i / (steps - 1)
-          local band = Color{
-            r = math.floor(from.red + (to.red - from.red) * t + 0.5),
+          band[i] = resolve(color_to_hex(Color{
+            r = math.floor(from.red   + (to.red   - from.red)   * t + 0.5),
             g = math.floor(from.green + (to.green - from.green) * t + 0.5),
-            b = math.floor(from.blue + (to.blue - from.blue) * t + 0.5),
+            b = math.floor(from.blue  + (to.blue  - from.blue)  * t + 0.5),
             a = 255,
-          }
-          local value = resolve(color_to_hex(band, false))
-          local sub
-          if op.direction == "horizontal" then
-            local w = math.ceil(r.width / steps)
-            sub = { x = r.x + i * w, y = r.y, width = math.min(w, r.x + r.width - (r.x + i * w)), height = r.height }
-          else
-            local h = math.ceil(r.height / steps)
-            sub = { x = r.x, y = r.y + i * h, width = r.width, height = math.min(h, r.y + r.height - (r.y + i * h)) }
+          }, false))
+        end
+
+        local cx = r.x + (r.width - 1) / 2
+        local cy = r.y + (r.height - 1) / 2
+        -- Centre to corner, so the outermost band lands on the rect's corners.
+        local radius = math.max(1, math.sqrt((r.width / 2) ^ 2 + (r.height / 2) ^ 2))
+
+        local function position(x, y)
+          if direction == "horizontal" then
+            return r.width  <= 1 and 0 or (x - r.x) / (r.width - 1)
+          elseif direction == "diagonal" then
+            local span = (r.width - 1) + (r.height - 1)
+            return span <= 0 and 0 or ((x - r.x) + (y - r.y)) / span
+          elseif direction == "radial" then
+            return math.min(1, math.sqrt((x - cx) ^ 2 + (y - cy) ^ 2) / radius)
           end
-          if sub.width > 0 and sub.height > 0 then
-            changed = changed + Draw.rect(img, ox, oy, sub, nil, value)
+          return r.height <= 1 and 0 or (y - r.y) / (r.height - 1)
+        end
+
+        local spec = BAYER.bayer4
+        for y = r.y, r.y + r.height - 1 do
+          for x = r.x, r.x + r.width - 1 do
+            local f = position(x, y) * (steps - 1)
+            local lo = math.max(0, math.min(steps - 1, math.floor(f)))
+            local index = lo
+            if op.dither and lo < steps - 1 then
+              -- Ordered dither across the band boundary: the fractional part is
+              -- the probability of taking the next band, thresholded by Bayer so
+              -- the texture is stable rather than noisy.
+              local threshold = (spec.m[(y % spec.size) + 1][(x % spec.size) + 1] + 0.5)
+                / (spec.size * spec.size)
+              if (f - lo) > threshold then index = lo + 1 end
+            elseif not op.dither then
+              index = math.max(0, math.min(steps - 1, math.floor(f + 0.5)))
+            end
+            changed = changed + Draw.pixel(img, ox, oy, x, y, band[index])
           end
         end
       elseif kind == "clear" then
@@ -1149,7 +1260,7 @@ H["draw.batch"] = function(args)
   end)
 
   return {
-    sprite = app.fs.fileName(s.filename or ""),
+    sprite = sprite_display_name(s),
     layer = layer.name,
     frame = frame.frameNumber,
     opsApplied = #ops,
@@ -1227,7 +1338,7 @@ H["layer.apply"] = function(args)
 
   if args.op == "list" and not batch then
     return {
-      sprite = app.fs.fileName(s.filename or ""),
+      sprite = sprite_display_name(s),
       layers = flatten_layers(s.layers, nil, {}),
       activeLayer = app.layer and app.layer.name or nil,
     }
@@ -1239,11 +1350,21 @@ H["layer.apply"] = function(args)
   end)
 
   return {
-    sprite = app.fs.fileName(s.filename or ""),
+    sprite = sprite_display_name(s),
     applied = #ops,
     layers = flatten_layers(s.layers, nil, {}),
     activeLayer = app.layer and app.layer.name or nil,
   }
+end
+
+--- The layer LinkCels should act on: the active one when it belongs to this
+--- sprite, else the topmost non-group layer.
+local function layer_for_link(s)
+  if app.layer and app.layer.sprite == s and not app.layer.isGroup then return app.layer end
+  for i = #s.layers, 1, -1 do
+    if not s.layers[i].isGroup then return s.layers[i] end
+  end
+  return s.layers[1]
 end
 
 local function frame_list(s)
@@ -1268,7 +1389,19 @@ H["frame.apply"] = function(args)
         local src = find_frame(s, args.frame)
         for _ = 1, (args.count or 1) do
           if args.linkCels then
-            preserving_site(function() app.frame = src; app.command.NewFrameLink() end)
+            -- LinkCels only links cels the command machinery created: a frame
+            -- made with Sprite:newFrame() bypasses that and stays unlinked, and
+            -- NewFrame's own "celLinked" content flag does not share the image
+            -- either. Create through the command, then link the pair.
+            preserving_site(function()
+              app.sprite = s
+              app.layer = layer_for_link(s)
+              app.frame = src
+              app.command.NewFrame{ content = "current" }
+              local created = app.frame
+              app.range.frames = { src.frameNumber, created.frameNumber }
+              app.command.LinkCels()
+            end)
           else
             s:newFrame(src)
           end
@@ -1303,7 +1436,7 @@ H["frame.apply"] = function(args)
 
   local frames, total = frame_list(s)
   return {
-    sprite = app.fs.fileName(s.filename or ""),
+    sprite = sprite_display_name(s),
     frameCount = #s.frames,
     frames = frames,
     totalDurationMs = total,
@@ -1361,7 +1494,7 @@ H["tag.apply"] = function(args)
       durationMs = ms,
     }
   end
-  return { sprite = app.fs.fileName(s.filename or ""), tags = tags }
+  return { sprite = sprite_display_name(s), tags = tags }
 end
 
 H["cel.apply"] = function(args)
@@ -1378,12 +1511,16 @@ H["cel.apply"] = function(args)
             layer = layer.name, frame = c.frameNumber,
             x = c.bounds.x, y = c.bounds.y,
             width = c.bounds.width, height = c.bounds.height,
-            opacity = c.opacity, linked = c.image ~= nil and false or false,
+            -- A linked cel shares one Image object with the cels it is linked to,
+            -- so identity — not existence — is what distinguishes it. The old
+            -- expression collapsed to a constant false and always answered
+            -- "nothing is linked", even right after cel op 'link'.
+            opacity = c.opacity, linked = is_linked_cel(layer, c),
           }
         end
       end
     end
-    return { sprite = app.fs.fileName(s.filename or ""), cels = cels }
+    return { sprite = sprite_display_name(s), cels = cels }
   end
 
   local layer = find_layer(s, args.layer)
@@ -1433,7 +1570,7 @@ H["cel.apply"] = function(args)
     end
   end)
 
-  return { sprite = app.fs.fileName(s.filename or ""), applied = applied }
+  return { sprite = sprite_display_name(s), applied = applied }
 end
 
 --------------------------------------------------------------------------------
@@ -1450,7 +1587,7 @@ end
 H["palette.get"] = function(args)
   local s = find_sprite(args.sprite)
   local colors = palette_hexes(s)
-  return { sprite = app.fs.fileName(s.filename or ""), colors = colors, size = #colors }
+  return { sprite = sprite_display_name(s), colors = colors, size = #colors }
 end
 
 H["palette.set"] = function(args)
@@ -1506,7 +1643,7 @@ H["palette.set"] = function(args)
   end
 
   local colors_after = palette_hexes(s)
-  return { sprite = app.fs.fileName(s.filename or ""), colors = colors_after, size = #colors_after }
+  return { sprite = sprite_display_name(s), colors = colors_after, size = #colors_after }
 end
 
 H["palette.load"] = function(args)
@@ -1518,7 +1655,7 @@ H["palette.load"] = function(args)
     s:setPalette(pal)
   end)
   local colors = palette_hexes(s)
-  return { sprite = app.fs.fileName(s.filename or ""), colors = colors, size = #colors, path = path }
+  return { sprite = sprite_display_name(s), colors = colors, size = #colors, path = path }
 end
 
 H["palette.stats"] = function(args)
@@ -1556,7 +1693,7 @@ H["palette.stats"] = function(args)
   end
   table.sort(off, function(a, b) return a.pixels > b.pixels end)
 
-  return { sprite = app.fs.fileName(s.filename or ""), colors = colors, usage = usage, offPalette = off }
+  return { sprite = sprite_display_name(s), colors = colors, usage = usage, offPalette = off }
 end
 
 --------------------------------------------------------------------------------
@@ -1649,7 +1786,7 @@ H["select.apply"] = function(args)
   end
 
   return {
-    sprite = app.fs.fileName(s.filename or ""),
+    sprite = sprite_display_name(s),
     empty = empty,
     bounds = (not empty) and { x = sel.bounds.x, y = sel.bounds.y, width = sel.bounds.width, height = sel.bounds.height } or nil,
     pixelCount = count,
@@ -1661,7 +1798,6 @@ H["transform.apply"] = function(args)
   local op = need(args.op, "op")
   local layer = find_layer(s, args.layer)
   local frame = find_frame(s, args.frame)
-  local scope = args.scope or "selection"
   local changed = 0
 
   transact("AI: " .. op, function()
@@ -1680,6 +1816,7 @@ H["transform.apply"] = function(args)
     end
 
     local img = cel.image
+    local img_w, img_h = img.width, img.height
     local out = Image(img.width, img.height, img.colorMode)
 
     if op == "flip" then
@@ -1691,7 +1828,7 @@ H["transform.apply"] = function(args)
           out:drawPixel(x, y, img:getPixel(sx, sy))
         end
       end
-      changed = img.width * img.height
+      changed = img_w * img_h
       cel.image = out
     elseif op == "rotate" then
       local angle = ((args.angle or 90) % 360 + 360) % 360
@@ -1702,6 +1839,7 @@ H["transform.apply"] = function(args)
           end
         end
         cel.image = out
+        changed = img_w * img_h
       elseif angle == 90 or angle == 270 then
         local rot = Image(img.height, img.width, img.colorMode)
         for y = 0, img.height - 1 do
@@ -1711,11 +1849,14 @@ H["transform.apply"] = function(args)
           end
         end
         cel.image = rot
+        changed = img_w * img_h
       elseif angle ~= 0 then
         fault("invalid_args", "Only 90/180/270 rotations are lossless. " ..
           "The server should have blocked this; pass allowLossy there if the user accepted the quality loss.")
       end
-      changed = img.width * img.height
+      -- angle == 0 falls through with changed still 0: reporting a full-canvas
+      -- change for an operation that touched nothing breaks any agent using
+      -- pixelsChanged to check whether its call did anything.
     elseif op == "scale" then
       local f = args.factor or 2
       local scaled = Image(img.width * f, img.height * f, img.colorMode)
@@ -1753,8 +1894,8 @@ H["transform.apply"] = function(args)
 
   local cel = get_cel(s, layer, frame, false)
   return {
-    sprite = app.fs.fileName(s.filename or ""),
-    op = op, scope = scope, pixelsChanged = changed,
+    sprite = sprite_display_name(s),
+    op = op, pixelsChanged = changed,
     bounds = cel and { x = cel.bounds.x, y = cel.bounds.y, width = cel.bounds.width, height = cel.bounds.height } or nil,
   }
 end
@@ -1826,7 +1967,12 @@ H["recolor.apply"] = function(args)
   if not cel then fault("invalid_args", "No cel on '" .. layer.name .. "' frame " .. frame.frameNumber .. ".") end
 
   local selection = args.selectionOnly and s.selection or nil
-  if selection and selection.isEmpty then selection = nil end
+  if args.selectionOnly and (not selection or selection.isEmpty) then
+    fault("invalid_args",
+      "selectionOnly was set but nothing is selected. Recolouring the whole cel instead would " ..
+      "change far more than you asked for, so this refuses. Select a region first, or pass a " ..
+      "`region`, or drop selectionOnly.")
+  end
   local region = args.region and clamp_region(s, args.region) or nil
 
   -- Map over distinct colours, not pixels: a 64x64 recolour becomes a handful
@@ -1909,7 +2055,7 @@ H["recolor.apply"] = function(args)
   end
 
   return {
-    sprite = app.fs.fileName(s.filename or ""),
+    sprite = sprite_display_name(s),
     op = op, pixelsChanged = changed, mapping = report,
   }
 end
@@ -1927,14 +2073,14 @@ H["reference.apply"] = function(args)
     for _, l in ipairs(s.layers) do
       if l.name:match("^reference") then refs[#refs + 1] = l.name end
     end
-    return { sprite = app.fs.fileName(s.filename or ""), op = op, references = refs }
+    return { sprite = sprite_display_name(s), op = op, references = refs }
   end
 
   if op == "remove" then
     transact("AI: remove reference", function()
       s:deleteLayer(find_layer(s, args.name or "reference"))
     end)
-    return { sprite = app.fs.fileName(s.filename or ""), op = op }
+    return { sprite = sprite_display_name(s), op = op }
   end
 
   local path = need(args.path, "path")
@@ -1965,7 +2111,7 @@ H["reference.apply"] = function(args)
     for i = 1, math.min(#list, args.colors or 16) do
       top[i] = { hex = list[i].hex, share = math.floor(list[i].share * 1000 + 0.5) / 1000 }
     end
-    return { sprite = app.fs.fileName(s.filename or ""), op = op, palette = top, width = sw, height = sh }
+    return { sprite = sprite_display_name(s), op = op, palette = top, width = sw, height = sh }
   end
 
   -- op == "import"
@@ -1997,7 +2143,7 @@ H["reference.apply"] = function(args)
     s:newCel(layer, find_frame(s, args.frame), scaled, Point(args.x or 0, args.y or 0))
   end)
 
-  return { sprite = app.fs.fileName(s.filename or ""), op = op, layer = name, width = tw, height = th }
+  return { sprite = sprite_display_name(s), op = op, layer = name, width = tw, height = th }
 end
 
 --------------------------------------------------------------------------------
@@ -2064,7 +2210,7 @@ H["export.run"] = function(args)
   end)
 
   return {
-    sprite = app.fs.fileName(s.filename or ""),
+    sprite = sprite_display_name(s),
     op = op, files = files,
     width = s.width, height = s.height, frameCount = #s.frames,
     frame = exported_frame,
@@ -2116,6 +2262,10 @@ local function cell_is_empty(cell, sprite)
 end
 
 --- Per-channel max difference between two same-sized cells, 0-255.
+--- RGB only: in indexed and grayscale modes the raw pixel value is a palette
+--- index or a packed gray+alpha pair, and running that through rgbaR/G/B/A
+--- extracts meaningless bit-fields — which merged two maximally different
+--- tiles into one and called it a successful dedup.
 local function cell_distance(a, b)
   local pc = app.pixelColor
   local worst = 0
@@ -2229,7 +2379,7 @@ H["tileset.apply"] = function(args)
         tileHeight = ts.grid.tileSize.height,
       }
     end
-    return { sprite = app.fs.fileName(s.filename or ""), op = op, tilesets = out }
+    return { sprite = sprite_display_name(s), op = op, tilesets = out }
   end
 
   if op == "create_layer" then
@@ -2244,7 +2394,7 @@ H["tileset.apply"] = function(args)
       end)
     end)
     return {
-      sprite = app.fs.fileName(s.filename or ""), op = op, layer = name,
+      sprite = sprite_display_name(s), op = op, layer = name,
       tileWidth = tw, tileHeight = th,
     }
   end
@@ -2261,6 +2411,12 @@ H["tileset.apply"] = function(args)
     local tw = args.tileWidth or 16
     local th = args.tileHeight or 16
     local tolerance = args.tolerance or 0
+    if tolerance > 0 and s.colorMode ~= ColorMode.RGB then
+      fault("invalid_args",
+        "tolerance > 0 needs an RGB sprite — perceptual distance is not defined over palette " ..
+        "indices or packed gray values, and comparing them merges unrelated tiles. " ..
+        "Convert to RGB, or pack with tolerance 0 (exact matches only).")
+    end
 
     if s.width % tw ~= 0 or s.height % th ~= 0 then
       fault("invalid_args", string.format(
@@ -2300,7 +2456,7 @@ H["tileset.apply"] = function(args)
           if hit then
             index = hit
             exact_reuse = exact_reuse + 1
-          elseif tolerance > 0 then
+          elseif tolerance > 0 and s.colorMode == ColorMode.RGB then
             -- Only the slow path scans: exact matches are already resolved.
             for i, existing in ipairs(unique) do
               if cell_distance(cell, existing.image) <= tolerance then
@@ -2351,7 +2507,7 @@ H["tileset.apply"] = function(args)
     end)
 
     return {
-      sprite = app.fs.fileName(s.filename or ""),
+      sprite = sprite_display_name(s),
       op = op,
       layer = layer_name,
       sourceLayer = source.name,
@@ -2414,7 +2570,7 @@ H["tileset.apply"] = function(args)
     end
 
     return {
-      sprite = app.fs.fileName(s.filename or ""), op = op,
+      sprite = sprite_display_name(s), op = op,
       layer = layer.name, tileCount = placed, skipped = skipped,
       columns = cols, rows = rows,
     }
@@ -2428,7 +2584,7 @@ H["tileset.apply"] = function(args)
       files[#files + 1] = args.path
     end
     return {
-      sprite = app.fs.fileName(s.filename or ""), op = op,
+      sprite = sprite_display_name(s), op = op,
       layer = layer.name, tileCount = #tileset,
       tileWidth = tw, tileHeight = th,
       columns = cols, rows = rows, files = files,
@@ -2614,7 +2770,7 @@ H["tileset.apply"] = function(args)
     end
 
     return {
-      sprite = app.fs.fileName(s.filename or ""), op = op,
+      sprite = sprite_display_name(s), op = op,
       layer = layer.name, format = format, layout = layout,
       tileCount = count, tileWidth = tw, tileHeight = th,
       columns = cols, rows = rows, files = files,
@@ -2639,7 +2795,7 @@ H["validate.run"] = function(args)
   local s = find_sprite(args.sprite)
   local wanted = {}
   for _, c in ipairs(args.checks or
-    { "palette", "strays", "outline", "layers", "animation", "export_readiness" }) do
+    { "palette", "strays", "outline", "banding", "layers", "animation", "export_readiness" }) do
     wanted[c] = true
   end
 
@@ -2719,6 +2875,99 @@ H["validate.run"] = function(args)
     end
   end
 
+  if wanted.outline or wanted.banding then
+    for _, layer in ipairs(s.layers) do
+      if not layer.isGroup and layer.isVisible then
+        for _, cel in ipairs(layer.cels) do
+          local img = cel.image
+
+          if wanted.outline then
+            -- Silhouette edge = an opaque pixel touching transparency. If one
+            -- colour owns most of that edge the sprite is outlined, and the
+            -- stragglers are gaps in it; if none does, the sprite simply is not
+            -- outlined, which is a legitimate style and only worth a note.
+            local edge, counts, total = {}, {}, 0
+            for y = 0, img.height - 1 do
+              for x = 0, img.width - 1 do
+                local hex = pixel_to_hex(s, img:getPixel(x, y))
+                if hex then
+                  local exposed = false
+                  for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+                    local nx, ny = x + d[1], y + d[2]
+                    if nx < 0 or ny < 0 or nx >= img.width or ny >= img.height
+                       or pixel_to_hex(s, img:getPixel(nx, ny)) == nil then exposed = true end
+                  end
+                  if exposed then
+                    total = total + 1
+                    counts[hex] = (counts[hex] or 0) + 1
+                    edge[#edge + 1] = { x = x + cel.position.x, y = y + cel.position.y, hex = hex }
+                  end
+                end
+              end
+            end
+
+            if total > 0 then
+              local best, best_n = nil, 0
+              for hex, n in pairs(counts) do
+                if n > best_n then best, best_n = hex, n end
+              end
+              local share = best_n / total
+              if share >= 0.6 and share < 1.0 then
+                local first = nil
+                for _, e in ipairs(edge) do
+                  if e.hex ~= best and not first then first = { x = e.x, y = e.y } end
+                end
+                add_finding(findings, "outline", "warning",
+                  string.format(
+                    "Outline is %d%% '%s' but %d edge pixel(s) use a different colour on '%s'. " ..
+                    "A broken outline reads as a hole in the silhouette.",
+                    math.floor(share * 100 + 0.5), best, total - best_n, layer.name),
+                  { layer = layer.name, frame = cel.frameNumber, at = first, count = total - best_n })
+              elseif share < 0.6 then
+                add_finding(findings, "outline", "note",
+                  "No single colour owns the silhouette edge on '" .. layer.name ..
+                  "', so this sprite is not outlined. That is a valid style — just keep it consistent.",
+                  { layer = layer.name, frame = cel.frameNumber })
+              end
+            end
+          end
+
+          if wanted.banding then
+            -- Banding is a long straight boundary between two colours: the eye
+            -- reads it as a contour line instead of a curved surface.
+            local threshold = math.max(8, math.floor(img.width / 3))
+            local worst, worst_at, worst_pair = 0, nil, nil
+            for y = 0, img.height - 2 do
+              local run, above, below, run_x = 0, nil, nil, 0
+              for x = 0, img.width - 1 do
+                local a = pixel_to_hex(s, img:getPixel(x, y))
+                local b = pixel_to_hex(s, img:getPixel(x, y + 1))
+                if a and b and a ~= b and a == above and b == below then
+                  run = run + 1
+                else
+                  above, below, run, run_x = a, b, (a and b and a ~= b) and 1 or 0, x
+                end
+                if run > worst then
+                  worst = run
+                  worst_at = { x = run_x + cel.position.x, y = y + cel.position.y }
+                  worst_pair = { above, below }
+                end
+              end
+            end
+            if worst >= threshold and worst_pair then
+              add_finding(findings, "banding", "note",
+                string.format(
+                  "A %d-pixel straight boundary between %s and %s on '%s'. " ..
+                  "Let the edge wander, or dither part of it, so it reads as a surface rather than a contour line.",
+                  worst, tostring(worst_pair[1]), tostring(worst_pair[2]), layer.name),
+                { layer = layer.name, frame = cel.frameNumber, at = worst_at, count = worst })
+            end
+          end
+        end
+      end
+    end
+  end
+
   if wanted.animation and #s.frames > 1 then
     if #s.tags == 0 then
       add_finding(findings, "animation", "error",
@@ -2742,7 +2991,7 @@ H["validate.run"] = function(args)
     end
   end
 
-  return { sprite = app.fs.fileName(s.filename or ""), findings = findings }
+  return { sprite = sprite_display_name(s), findings = findings }
 end
 
 --------------------------------------------------------------------------------
@@ -2770,9 +3019,15 @@ H["lua.run"] = function(args)
 
   local ok, result
   local function body() ok, result = pcall(chunk, sprite) end
-  if args.label then transact("AI: " .. args.label, body) else body() end
 
+  -- transact() can throw, and an un-restored `print` stays hijacked for the
+  -- rest of the Aseprite session — silently swallowing the output of every
+  -- other script the user runs. Restore it whatever happens.
+  local ran, ran_err = pcall(function()
+    if args.label then transact("AI: " .. args.label, body) else body() end
+  end)
   print = real_print
+  if not ran then fault("aseprite_error", tostring(ran_err)) end
 
   if not ok then fault("aseprite_error", tostring(result)) end
   return {

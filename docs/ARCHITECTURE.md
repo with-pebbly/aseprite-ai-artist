@@ -9,7 +9,7 @@ dials out to it.
 That single fact produces the three-process shape below.
 
 ```
-   Agent host (Claude Code / Codex / Gemini CLI / Cursor / VS Code)
+   Agent host (Claude Code / Codex / Gemini / Cursor / VS Code / Windsurf)
    ┌──────────────────────────────────────────────────────────────┐
    │  skills (skill://…)   rules (rules://…)   18 tools           │
    └───────────────────────────┬──────────────────────────────────┘
@@ -115,6 +115,12 @@ pixels is worse than either being wrong alone.
   Aseprite is unfocused, but the extension's reconnect timer is driven by the UI
   loop, so re-establishing a *dropped* connection can wait until the window is
   focused once.
+- **Text grids are capped at 64×64 cells and 71 distinct colours.** Above
+  either, `look` op `ascii` refuses and asks for a smaller region — a grid whose
+  glyphs collide would misreport which colour is where.
+- **`transform` acts on one cel**, the target layer's image on the target frame.
+  There is no selection- or sprite-scoped transform; crop a region out with
+  `draw` op `blit` first if you need one.
 - **Text grids are capped at 64×64.** Above that, `look` op `ascii` refuses and
   asks for a region. A wall of text is worse than no answer.
 - **blob47 export assumes canonical ordering.** The wangset it writes maps

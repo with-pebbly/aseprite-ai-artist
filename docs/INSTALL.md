@@ -8,8 +8,13 @@ only the agent wiring differs.
 
 - **Aseprite 1.3 or newer.** The Lua WebSocket API this depends on does not
   exist in 1.2.
-- **Node 20.10 or newer.**
+- **Node 22.6 or newer.**
 - Aseprite must have been **run at least once**, so its config directory exists.
+
+> **The npm package is not published yet.** Every `npx` line below is the
+> intended flow; today you need a checkout (see "Running from a checkout" at the
+> bottom) and must point the generated config at `node <abs-path>/dist/cli.js
+> serve`. The Claude Code plugin path needs no such edit — it builds itself.
 
 ## 1. Install the Aseprite extension
 
@@ -62,6 +67,11 @@ npx @with-pebbly/aseprite-ai-artist install codex
 Writes `[mcp_servers.aseprite-ai-artist]` into `~/.codex/config.toml`. Codex uses
 TOML — the JSON config from other clients will not work, which is a common
 source of "it silently does nothing".
+
+Codex does not expose MCP **prompts**, so the skills do not appear as commands
+there. It does read MCP **resources**, which is where the same skill content
+lives (`skill://pixel-draw` and friends), and in practice it finds and follows
+them on its own — verified against Codex CLI 0.145.0.
 
 ### Gemini CLI
 
@@ -158,5 +168,17 @@ node dist/cli.js install-extension
 ## Uninstall
 
 Delete the `aseprite-ai-artist` directory from Aseprite's `extensions` folder,
-remove the server entry from your agent's config, and stop any running bridge
-(`pkill -f "aseprite-ai-artist bridge"`).
+remove the server entry from your agent's config, and stop any running bridge:
+
+```bash
+pkill -f "aseprite-ai-artist bridge"    # macOS / Linux
+```
+
+On Windows there is no `pkill` — end the `node` process running
+`aseprite-ai-artist bridge` from Task Manager, or:
+
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object CommandLine -like '*aseprite-ai-artist*bridge*' |
+  ForEach-Object { Stop-Process -Id $_.ProcessId }
+```

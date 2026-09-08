@@ -27,6 +27,8 @@ import {
 const DEFAULT_TIMEOUT_MS = 20_000;
 const RECONNECT_BASE_MS = 250;
 const RECONNECT_MAX_MS = 5_000;
+/** Floor between bridge spawn attempts, so a failing spawn cannot become a fork bomb. */
+const SPAWN_COOLDOWN_MS = 10_000;
 
 export interface LiveClientOptions {
   controlPort?: number;
@@ -56,7 +58,7 @@ export class LiveClient {
   private reconnectDelay = RECONNECT_BASE_MS;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private closed = false;
-  private spawnAttempted = false;
+  private lastSpawnAt = 0;
 
   private state: BridgeStateFrame | null = null;
 
@@ -142,12 +144,16 @@ export class LiveClient {
   close(): void {
     this.closed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.rejectPending(new LiveError("not_connected", "Client closed."));
+    this.socket?.close();
+  }
+
+  private rejectPending(err: Error): void {
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);
-      p.reject(new LiveError("not_connected", "Client closed."));
+      p.reject(err);
     }
     this.pending.clear();
-    this.socket?.close();
   }
 
   // ── internals ──────────────────────────────────────────────────────────────
@@ -171,10 +177,22 @@ export class LiveClient {
 
     socket.on("close", () => {
       this.state = null;
+      // Fail in-flight calls now. Letting each wait out its own 20s timeout
+      // turns a known disconnect into what an agent reads as "Aseprite is slow"
+      // — and slow is the reading that makes it try something else.
+      this.rejectPending(
+        notConnected("The bridge connection dropped while this call was in flight."),
+      );
       if (this.closed) return;
-      if (this.autoSpawn && !this.spawnAttempted) {
-        this.spawnAttempted = true;
-        this.spawnBridge();
+      if (this.autoSpawn) {
+        // Retry the spawn on a later reconnect too: a bridge that died after we
+        // started it would otherwise leave this client looping forever with no
+        // recovery short of the user restarting things by hand.
+        const now = Date.now();
+        if (now - this.lastSpawnAt > SPAWN_COOLDOWN_MS) {
+          this.lastSpawnAt = now;
+          this.spawnBridge();
+        }
       }
       this.scheduleReconnect();
     });

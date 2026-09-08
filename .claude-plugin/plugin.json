@@ -11,11 +11,21 @@
   "homepage": "https://github.com/with-pebbly/aseprite-ai-artist#readme",
   "repository": "https://github.com/with-pebbly/aseprite-ai-artist",
   "license": "MIT",
-  "keywords": ["aseprite", "pixel-art", "sprites", "animation", "gamedev", "mcp"],
+  "keywords": [
+    "aseprite",
+    "pixel-art",
+    "sprites",
+    "animation",
+    "gamedev",
+    "mcp"
+  ],
   "mcpServers": {
     "aseprite": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/bin/aseprite-ai-artist",
-      "args": ["serve"],
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/bin/aseprite-ai-artist.mjs",
+        "serve"
+      ],
       "env": {
         "ASEPRITE_AI_PLUGIN_PORT": "9931",
         "ASEPRITE_AI_CONTROL_PORT": "9932"

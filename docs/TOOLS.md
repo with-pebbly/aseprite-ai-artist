@@ -22,11 +22,12 @@ has to see them to recover.
 | `look` | `preview` `ascii` `filmstrip` `diff` | The see-your-work tool. |
 | `read_pixels` | — | Structured pixel data: distinct colours plus a row-major index grid. |
 
-- **`preview`** — nearest-neighbour upscale to ~1024px long edge. For judging
-  the overall read.
+- **`preview`** — nearest-neighbour upscale to a ~1024px long edge (bounded so
+  the output never exceeds ~2048px). For judging the overall read.
 - **`ascii`** — exact text grid, one glyph per pixel, with coordinate rulers and
   a colour legend. For verifying precise positions, and for clients with no
-  vision. Capped at 64×64.
+  vision. Capped at 64×64 cells and 71 distinct colours; above either it refuses
+  rather than let glyphs collide.
 - **`filmstrip`** — every frame in one image. A vision model reads only the
   first frame of a GIF, so this is the only way to review animation.
 - **`diff`** — pixel-level text diff between two frames. `.` unchanged,
@@ -38,7 +39,7 @@ has to see them to recover.
 |------|-------------|-------|
 | `draw` | `pixels` `line` `polyline` `rect` `ellipse` `fill` `replace` `dither` `gradient` `clear` `blit` | Batch. One transaction, one undo step. |
 | `select` | `get` `none` `all` `rect` `ellipse` `color` `invert` `grow` `shrink` | Scopes `draw`, `transform` and `recolor`. |
-| `transform` | `translate` `flip` `rotate` `scale` `outline` `crop_to_content` | Non-90° rotation and non-integer scale need `allowLossy`. |
+| `transform` | `translate` `flip` `rotate` `scale` `outline` `crop_to_content` | Acts on ONE cel; there is no scope parameter. Non-90° rotation needs `allowLossy`. |
 | `recolor` | `shade` `snap` `replace` `hue_shift` `desaturate` | Operates on distinct colours, not pixels; one pass, one undo step. |
 
 `draw` and `recolor` snap colours to the sprite's palette by CIELAB ΔE unless

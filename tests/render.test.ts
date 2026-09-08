@@ -54,10 +54,34 @@ test("renderDiff refuses mismatched sizes instead of silently truncating", () =>
   );
 });
 
-test("previewScale lands a small sprite near the target and caps the factor", () => {
-  assert.equal(previewScale(32, 32, 1024), 16); // capped
+test("previewScale actually reaches the target for small sprites", () => {
+  // A factor cap of 16 rendered a 16px sprite at 256px and an 8px one at 128px
+  // — exactly the sizes where a vision model is otherwise guessing. The bound
+  // belongs on the output size, not the factor.
+  assert.equal(previewScale(8, 8, 1024) * 8, 1024);
+  assert.equal(previewScale(16, 16, 1024) * 16, 1024);
+  assert.equal(previewScale(32, 32, 1024) * 32, 1024);
   assert.equal(previewScale(128, 128, 1024), 8);
   assert.equal(previewScale(2048, 2048, 1024), 1); // never downscales below 1
+  // and never explodes: the output edge stays bounded
+  assert.ok(previewScale(1, 1, 1024) * 1 <= 2048);
+});
+
+test("renderAscii refuses a region with more colours than it has glyphs", () => {
+  // Past the alphabet every extra colour used to collapse onto "?" and
+  // overwrite the same legend entry, so the grid quietly misreported which
+  // colour was where — in the exact tool an agent uses to verify its own edits.
+  const many = 100;
+  const colors = ["#00000000"];
+  const grid: number[] = [];
+  for (let i = 0; i < many; i++) {
+    colors.push(`#${i.toString(16).padStart(2, "0")}0000`);
+    grid.push(i + 1);
+  }
+  assert.throws(
+    () => renderAscii({ x: 0, y: 0, width: many, height: 1, colors, grid }),
+    /distinct colours .* glyphs/s,
+  );
 });
 
 test("filmstripLayout stays as square as whole cells allow", () => {

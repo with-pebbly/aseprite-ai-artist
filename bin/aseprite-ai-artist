@@ -1,18 +1,6 @@
 #!/usr/bin/env bash
-# Launcher used by the Claude Code plugin and by anyone running from a checkout.
-#
-# A plugin installed from git arrives as source with no build step, so this
-# builds once on first use and then execs the compiled CLI. Published npm users
-# never touch this file — they run `npx @with-pebbly/aseprite-ai-artist`.
-set -euo pipefail
-
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cli="$root/dist/cli.js"
-
-if [ ! -f "$cli" ]; then
-  # stderr only: stdout is the MCP stdio channel and any stray byte corrupts it.
-  echo "[aseprite-ai-artist] first run — building…" >&2
-  (cd "$root" && npm install --silent --no-audit --no-fund >&2 && npm run --silent build >&2)
-fi
-
-exec node "$cli" "$@"
+# Superseded by aseprite-ai-artist.mjs, which the plugin manifest now names as
+# its MCP command: Windows does not interpret a `#!` line, so a bash shim there
+# fails to start the server at all. Kept as a thin delegate so an existing POSIX
+# invocation of this path keeps working, with no duplicated build logic.
+exec node "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/aseprite-ai-artist.mjs" "$@"

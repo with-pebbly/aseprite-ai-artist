@@ -150,6 +150,30 @@ test("a reconnecting plugin replaces the old one instead of being locked out", a
   second.close();
 });
 
+test("a dropped bridge fails in-flight calls immediately, not on their own timeout", async () => {
+  // Letting each call wait out its 20s timeout makes a known disconnect read to
+  // an agent as "Aseprite is slow" — and slow is the reading that makes it try
+  // editing files on disk instead.
+  const plugin = await fakePlugin(() => new Promise(() => {}) as never);
+  const c = client();
+  assert.ok(await c.waitForPlugin(3_000));
+
+  const inFlight = c.call("sprite.info");
+  // Drop the plugin AND the client's control link.
+  plugin.close();
+  await new Promise((r) => setTimeout(r, 50));
+  (c as unknown as { socket: { close(): void } }).socket.close();
+
+  const started = Date.now();
+  await assert.rejects(inFlight, (err: Error & { code?: string }) => {
+    assert.equal(err.code, "not_connected");
+    return true;
+  });
+  const waited = Date.now() - started;
+  assert.ok(waited < 2_000, `should fail fast, waited ${waited}ms`);
+  c.close();
+});
+
 test("a second bridge on the same ports loses the race and says so", async () => {
   const duplicate = new Bridge({
     pluginPort: PLUGIN_PORT,

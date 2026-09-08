@@ -153,7 +153,7 @@ export function registerStructureTools(server: McpServer, live: LiveClient): voi
         from: z.number().int().positive().optional().describe("First frame, 1-based, inclusive."),
         to: z.number().int().positive().optional().describe("Last frame, 1-based, inclusive."),
         direction: z.enum(["forward", "reverse", "pingpong", "pingpong_reverse"]).optional(),
-        repeat: z.number().int().min(0).optional().describe("0 means loop forever."),
+        repeats: z.number().int().min(0).optional().describe("Loop count; 0 means forever."),
         color: z.string().optional().describe("Tag colour in the timeline, #rrggbb."),
       },
       outputSchema: {

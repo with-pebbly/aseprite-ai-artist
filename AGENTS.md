@@ -17,6 +17,14 @@ Guidance for agents and humans changing this code. For using the tool, see the
 
 ## The rules that are not negotiable
 
+**Nothing may be declared and not implemented.** A schema field, an `op` value
+or a check name that the Lua side never reads is worse than a missing feature:
+the call validates, succeeds, and does nothing. A 2026-09-08 audit found six of
+these at once — `transform.scope`, `gradient.dither`, `validate`'s `outline` and
+`banding` checks, `tag`'s `repeat`, and a `linked` flag hardcoded to false. If
+you add a field, add the branch that reads it in the same change, and a test
+that fails without it.
+
 **The tool count stays at or under 24.** A test enforces it. The whole design is
 in [ADR-0003](docs/adr/0003-compact-tool-surface.md): every tool schema costs
 context on every turn of every conversation, including the ones that never touch
@@ -49,11 +57,20 @@ Aseprite's Lua environment is not plain Lua, and its deviations fail silently:
 - **`print()` inside a WebSocket callback does not reach stdout.** Trace through
   the status file instead.
 - **`function t["key"]()` is not valid Lua.** Use `t["key"] = function()`.
-- **A scratch `Sprite` must be created inside `preserving_site`**, not before
-  it, or the restore targets a document you just closed and Aseprite is left
-  with no active sprite.
 - **A Lua table cannot hold a `nil` value**, so an absent field is a missing key
   and never an explicit null. Output schemas use `.nullish()`, not `.nullable()`.
+- **Assigning `cel.image` invalidates the old handle.** Read `img.width`/`height`
+  into locals before the swap or the next line raises "Tried to access a deleted
+  'ImageObj'".
+- **`cel.image` returns a fresh wrapper each read**, so `rawequal` never matches.
+  Compare `cel.image.id` to tell whether two cels share one image.
+- **`Sprite:newFrame()` bypasses the command machinery**, and `LinkCels` will not
+  link a frame made that way. Create through `app.command.NewFrame` when the
+  frame has to be linkable. `NewFrameLink` does not exist in 1.3.
+- **A scratch `Sprite` must be created inside `preserving_site`**, not before it.
+- **Global `print` must be restored on every path** — `lua.run` hijacks it to
+  capture output, and a throw that skips the restore leaves every other script's
+  output swallowed for the rest of the session.
 - **A tilemap cel needs a `ColorMode.TILEMAP` image**, built from an `ImageSpec`.
   The generic cel helper hands back an RGB image and every stamp is silently
   lost.
