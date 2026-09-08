@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  # Required for npm provenance: the published package carries a signed
+  # attestation linking it to this workflow run and this commit.
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          # Writes the .npmrc that makes NODE_AUTH_TOKEN authenticate the publish.
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      # A release publishes whatever the tag points at. If the tag and the
+      # manifest disagree, npm ships the manifest's version regardless and the
+      # GitHub release then names a version that does not exist on npm.
+      - name: Assert the tag matches package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$manifest" ]; then
+            echo "tag ${GITHUB_REF_NAME} resolves to ${tag}, package.json says ${manifest}" >&2
+            exit 1
+          fi
+          echo "publishing ${manifest}"
+
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+
+      # A prerelease must not take the `latest` dist-tag — that is what a bare
+      # `npm install` resolves to.
+      - name: Publish
+        run: npm publish --access public --provenance --tag "$NPM_TAG"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TAG: ${{ github.event.release.prerelease && 'next' || 'latest' }}
