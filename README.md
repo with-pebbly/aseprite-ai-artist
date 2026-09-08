@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/media/mascot.png" alt="The Aseprite AI Artist mascot" width="176">
+<img src="docs/media/hero.gif" alt="A pixel robot paints a mushroom house, stroke by stroke" width="512">
 
 # Aseprite AI Artist
 
@@ -10,6 +10,10 @@ copy, not on disk, in the document you are looking at.
 [![npm](https://img.shields.io/npm/v/@pebbly/aseprite-ai-artist?color=%23e07a3f&label=npm)](https://www.npmjs.com/package/@pebbly/aseprite-ai-artist)
 [![CI](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml/badge.svg)](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml)
 [![licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
+
+*Forty frames, one 16-colour palette, drawn by Codex through this server in a
+live Aseprite window — silhouette, flats, hue-shifted shading, then the lights
+come on. Nobody touched a pixel by hand.*
 
 </div>
 
@@ -112,8 +116,12 @@ that surprises people:
   32×32 grid is a spatial problem: the model has to hold a coordinate frame in
   its head, keep a silhouette readable at that size, and notice when a shape has
   gone wrong. Turn reasoning up before you blame the tool.
-- **Codex CLI on a high-reasoning setting is the best drawer we have used**,
-  working from a brief and the rulebook alone.
+- **Codex CLI on a high-reasoning setting is the best drawer we have used** — it
+  drew the animation at the top of this page and the mascot below, working from
+  a brief and the rulebook alone.
+
+  <img src="docs/media/mascot.png" alt="The mascot" width="96">
+
 - **Claude Code is the better planner and critic.** Palette construction, rig
   layout, animation timing and the review pass come out noticeably stronger;
   raw pixel placement at small canvas sizes is weaker.
