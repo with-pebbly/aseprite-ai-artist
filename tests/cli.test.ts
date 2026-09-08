@@ -157,3 +157,36 @@ test("a connected extension reports both versions", () => {
   assert.match(extension, /^✓ Aseprite extension/);
   assert.match(extension, /0\.1\.0 on Aseprite 1\.3\.17/);
 });
+
+test("an extension older than the server is not a tick", () => {
+  const [, extension] = linkLines({
+    bridgeUp: true,
+    wasAlreadyRunning: true,
+    pluginUp: true,
+    controlPort: 9932,
+    extensionVersion: "0.1.3",
+    asepriteVersion: "1.3.17",
+    serverVersion: "0.1.6",
+  });
+  // Aseprite loads the extension at startup, so an editor left open across an
+  // upgrade answers with the old build until it is restarted — silently, for
+  // as long as the session lasts.
+  assert.doesNotMatch(extension, /^✓/);
+  assert.match(extension, /0\.1\.3 attached/);
+  assert.match(extension, /this server is 0\.1\.6/);
+  assert.match(extension, /install-extension/);
+  assert.match(extension, /restart Aseprite/);
+});
+
+test("matching versions stay a tick", () => {
+  const [, extension] = linkLines({
+    bridgeUp: true,
+    wasAlreadyRunning: true,
+    pluginUp: true,
+    controlPort: 9932,
+    extensionVersion: "0.1.6",
+    asepriteVersion: "1.3.17",
+    serverVersion: "0.1.6",
+  });
+  assert.match(extension, /^✓ Aseprite extension/);
+});

@@ -262,6 +262,7 @@ async function doctor(opts: { pluginPort: number; controlPort: number }): Promis
       controlPort: opts.controlPort,
       extensionVersion: live.hello?.extensionVersion,
       asepriteVersion: live.hello?.asepriteVersion,
+      serverVersion: packageVersion(),
     }),
   );
 

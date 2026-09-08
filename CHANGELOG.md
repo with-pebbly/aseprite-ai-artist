@@ -4,6 +4,44 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is
 [semver](https://semver.org/).
 
+## [0.1.6] — 2026-09-09
+
+Mostly documentation and art, plus one thing that should have existed from the
+start. The extension's own code is unchanged from 0.1.5 apart from the version
+string it reports.
+
+### Added
+
+- **`doctor` and `preflight` now say when the attached extension is older than
+  the server.** Aseprite loads the extension once, at startup, so an editor left
+  open across an upgrade keeps answering with the old build — silently, for as
+  long as that session lasts. Nothing compared the two versions, so this went
+  unnoticed for a whole working day: three bugs fixed in 0.1.5 went on being
+  worked around by an agent talking to a 0.1.3 extension that reported itself
+  perfectly happily. A mismatch is no longer a tick, and `preflight` puts it in
+  the directive the agent reads first.
+- `docs/media/src/hero2/` — the generator the hero is built from: a coordinate
+  model that emits all 54 frames, a push script, and `compare.py`, which diffs
+  the model against Aseprite's own export and currently reports zero differing
+  pixels. The scene had been regenerable only from a temporary directory.
+
+### Changed
+
+- **The hero animation closes its loop.** It ran 36 frames, finished the
+  painting and hard-cut back to a blank canvas. Now the robot holds on the
+  finished picture, wipes it off, and starts again — 54 frames, tagged `paint`
+  (1–33), `hold` (34–37), `erase` (38–52), `reset` (53–54). Frame 54 hands over
+  to frame 1 with 60 pixels different, all of them deliberate: the first dab,
+  the antenna, one step of the dust clock.
+- **The README is half the prose it was.** Fifteen headings became nine, the
+  install is three short steps, and the per-client capability table moved to
+  `docs/INSTALL.md`, which is where someone installing actually looks.
+- `docs/INSTALL.md` explains why `npx @pebbly/aseprite-ai-artist` fails inside a
+  checkout of this repository. npm resolves the current project as the package,
+  skips fetching it, and looks for the binary in `node_modules/.bin` — where a
+  package's own bin is never linked. The result is `command not found`, which
+  reads like a broken package and is only ever a wrong working directory.
+
 ## [0.1.5] — 2026-09-09
 
 Three commands reported success while doing nothing. That is worse than an

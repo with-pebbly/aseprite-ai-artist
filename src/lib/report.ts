@@ -16,6 +16,20 @@ export interface LinkState {
   controlPort: number;
   extensionVersion?: string;
   asepriteVersion?: string;
+  /** This package's version, to compare against the extension actually attached. */
+  serverVersion?: string;
+}
+
+/**
+ * The extension is installed separately and only reloads when Aseprite
+ * restarts, so an editor left running keeps answering with whatever build it
+ * started with — for hours, across several `npx` upgrades. Nothing compared the
+ * two versions, so a bug fixed days ago went on being worked around by whoever
+ * was drawing. A tick that says nothing about this is the wrong tick.
+ */
+function staleExtension(state: LinkState): boolean {
+  const { extensionVersion: ext, serverVersion: server } = state;
+  return Boolean(ext && server && ext !== server);
 }
 
 export function linkLines(state: LinkState): [bridge: string, extension: string] {
@@ -28,7 +42,10 @@ export function linkLines(state: LinkState): [bridge: string, extension: string]
       : `· Bridge                 not running — started one to test, stopping it again below`;
 
   const extension = state.pluginUp
-    ? `✓ Aseprite extension     ${state.extensionVersion ?? "?"} on Aseprite ${state.asepriteVersion ?? "?"}`
+    ? staleExtension(state)
+      ? `! Aseprite extension     ${state.extensionVersion} attached, but this server is ${state.serverVersion} — ` +
+        "run `install-extension` and restart Aseprite"
+      : `✓ Aseprite extension     ${state.extensionVersion ?? "?"} on Aseprite ${state.asepriteVersion ?? "?"}`
     : state.bridgeUp
       ? "✗ Aseprite extension     not connected — open Aseprite, or run `install-extension` and restart it"
       // Without a bridge the extension has nothing to attach to, so its state is

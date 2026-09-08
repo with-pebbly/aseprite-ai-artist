@@ -11,8 +11,9 @@ open.** Not a copy, not a file on disk — the document you are looking at.
 [![CI](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml/badge.svg)](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml)
 [![licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
-<sub>192×96, 36 frames, one palette. Drawn through this server into a live
-Aseprite window — the paint appears under the brush, every frame.</sub>
+<sub>192×96, 54 frames, one palette. Drawn through this server into a live
+Aseprite window — the paint appears under the brush, every frame. Then the robot
+wipes the canvas clean and starts again, which is why the loop has no seam.</sub>
 
 </div>
 

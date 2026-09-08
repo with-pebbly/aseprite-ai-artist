@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LiveClient } from "../bridge/client.js";
 import { fail, ok, targetShape } from "./kit.js";
+import { packageVersion } from "../lib/version.js";
 
 export function registerSessionTools(server: McpServer, live: LiveClient): void {
   server.registerTool(
@@ -58,6 +59,16 @@ export function registerSessionTools(server: McpServer, live: LiveClient): void 
         );
       }
 
+      // Aseprite loads the extension once, at startup, so an editor left open
+      // across an upgrade keeps answering with the old build — and the agent
+      // spends the session working around bugs that were fixed weeks ago. Say
+      // so up front; it is the first thing preflight is asked.
+      const stale =
+        base.extensionVersion !== null && base.extensionVersion !== packageVersion()
+          ? `The attached extension is ${String(base.extensionVersion)} but this server is ${packageVersion()}. ` +
+            "Tell the user to run `install-extension` and restart Aseprite before trusting a command that misbehaves. "
+          : "";
+
       try {
         const site = await live.call<Record<string, unknown>>("session.site", {}, { expect: ["openSprites"] });
         const sprite = site.sprite as Record<string, unknown> | null;
@@ -75,9 +86,11 @@ export function registerSessionTools(server: McpServer, live: LiveClient): void 
                   layers: Number(sprite.layers ?? 0),
                 }
               : null,
-            directive: sprite
-              ? "Ready. Call sprite_info before your first edit so you are working from the real layer, frame and palette state."
-              : "Ready, but no sprite is open. Use sprite_manage with op 'new' or 'open' first.",
+            directive:
+              stale +
+              (sprite
+                ? "Ready. Call sprite_info before your first edit so you are working from the real layer, frame and palette state."
+                : "Ready, but no sprite is open. Use sprite_manage with op 'new' or 'open' first."),
           },
           sprite
             ? `READY — Aseprite ${base.asepriteVersion}, active sprite ${String(sprite.name)} (${String(sprite.width)}×${String(sprite.height)}).`

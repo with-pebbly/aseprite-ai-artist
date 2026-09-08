@@ -2,7 +2,7 @@
   "name": "aseprite-ai-artist",
   "displayName": "Aseprite AI Artist",
   "description": "Lets a coding agent draw in this Aseprite session over a local WebSocket link. Connects to 127.0.0.1 only; nothing leaves the machine.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "author": "with-pebbly",
   "publisher": "with-pebbly",
   "license": "MIT",
