@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/media/hero.gif" alt="A pixel robot paints a mushroom house, stroke by stroke" width="512">
-
 # Aseprite AI Artist
 
 **Let a coding agent draw pixel art in your open Aseprite window** — not in a
@@ -10,10 +8,6 @@ copy, not on disk, in the document you are looking at.
 [![npm](https://img.shields.io/npm/v/@pebbly/aseprite-ai-artist?color=%23e07a3f&label=npm)](https://www.npmjs.com/package/@pebbly/aseprite-ai-artist)
 [![CI](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml/badge.svg)](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml)
 [![licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
-
-*Forty frames, one 16-colour palette, drawn by Codex through this server in a
-live Aseprite window — silhouette, flats, hue-shifted shading, then the lights
-come on. Nobody touched a pixel by hand.*
 
 </div>
 
