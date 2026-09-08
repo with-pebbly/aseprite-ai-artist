@@ -11,15 +11,10 @@ only the agent wiring differs.
 - **Node 22.6 or newer.**
 - Aseprite must have been **run at least once**, so its config directory exists.
 
-> **The npm package is not published yet.** Every `npx` line below is the
-> intended flow; today you need a checkout (see "Running from a checkout" at the
-> bottom) and must point the generated config at `node <abs-path>/dist/cli.js
-> serve`. The Claude Code plugin path needs no such edit — it builds itself.
-
 ## 1. Install the Aseprite extension
 
 ```bash
-npx @with-pebbly/aseprite-ai-artist install-extension
+npx @pebbly/aseprite-ai-artist install-extension
 ```
 
 Then **restart Aseprite**. It connects on startup.
@@ -34,7 +29,7 @@ Linux `~/.config/aseprite`.
 ### Everything at once
 
 ```bash
-npx @with-pebbly/aseprite-ai-artist install --all --agents
+npx @pebbly/aseprite-ai-artist install --all --agents
 ```
 
 Writes config for Claude Code, Codex, Gemini CLI, Cursor, VS Code and Windsurf,
@@ -55,13 +50,13 @@ subagents and the hooks, not just the tools:
 Or wire the server alone:
 
 ```bash
-npx @with-pebbly/aseprite-ai-artist install claude
+npx @pebbly/aseprite-ai-artist install claude
 ```
 
 ### Codex CLI
 
 ```bash
-npx @with-pebbly/aseprite-ai-artist install codex
+npx @pebbly/aseprite-ai-artist install codex
 ```
 
 Writes `[mcp_servers.aseprite-ai-artist]` into `~/.codex/config.toml`. Codex uses
@@ -76,19 +71,19 @@ them on its own — verified against Codex CLI 0.145.0.
 ### Gemini CLI
 
 ```bash
-npx @with-pebbly/aseprite-ai-artist install gemini
+npx @pebbly/aseprite-ai-artist install gemini
 ```
 
 ### Cursor
 
 ```bash
-npx @with-pebbly/aseprite-ai-artist install cursor
+npx @pebbly/aseprite-ai-artist install cursor
 ```
 
 ### Project scope instead of user scope
 
 ```bash
-npx @with-pebbly/aseprite-ai-artist install codex cursor --project
+npx @pebbly/aseprite-ai-artist install codex cursor --project
 ```
 
 Writes into the current directory (`.codex/config.toml`, `.cursor/mcp.json`) so
@@ -97,7 +92,7 @@ the setup travels with the repository.
 ## 3. Check it
 
 ```bash
-npx @with-pebbly/aseprite-ai-artist doctor
+npx @pebbly/aseprite-ai-artist doctor
 ```
 
 ```
@@ -146,7 +141,7 @@ with the transcript.
 **Ports already in use** — something else owns 9931/9932. Move both:
 
 ```bash
-npx @with-pebbly/aseprite-ai-artist install --all --plugin-port 9941 --control-port 9942
+npx @pebbly/aseprite-ai-artist install --all --plugin-port 9941 --control-port 9942
 ```
 
 and set `ASEPRITE_AI_PLUGIN_PORT` in Aseprite's environment to match.

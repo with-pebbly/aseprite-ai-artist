@@ -8,23 +8,10 @@ actually has to follow. Works with **Claude Code, Codex CLI, Gemini CLI, Cursor,
 VS Code and Windsurf** from the same one-line config.
 
 ```bash
-npx @with-pebbly/aseprite-ai-artist install --all --agents
-npx @with-pebbly/aseprite-ai-artist install-extension
+npx @pebbly/aseprite-ai-artist install --all --agents
+npx @pebbly/aseprite-ai-artist install-extension
 # restart Aseprite, restart your agent
 ```
-
-> [!IMPORTANT]
-> **Not published to npm yet**, so the `npx` line above does not work today —
-> it is what the install flow will be. Until it ships, clone and build:
->
-> ```bash
-> git clone https://github.com/with-pebbly/aseprite-ai-artist
-> cd aseprite-ai-artist && npm install && npm run build
-> node dist/cli.js install --all --agents      # then edit the written config
-> node dist/cli.js install-extension           # to `node <abs-path>/dist/cli.js serve`
-> ```
->
-> Claude Code users can skip that: the plugin install below builds itself.
 
 > **Requires Aseprite 1.3+** and Node 22.6+.
 
@@ -87,10 +74,10 @@ not just the tools:
 ### Everything else
 
 ```bash
-npx @with-pebbly/aseprite-ai-artist install codex      # ~/.codex/config.toml
-npx @with-pebbly/aseprite-ai-artist install gemini     # ~/.gemini/settings.json
-npx @with-pebbly/aseprite-ai-artist install cursor     # ~/.cursor/mcp.json
-npx @with-pebbly/aseprite-ai-artist install --all      # all of the above
+npx @pebbly/aseprite-ai-artist install codex      # ~/.codex/config.toml
+npx @pebbly/aseprite-ai-artist install gemini     # ~/.gemini/settings.json
+npx @pebbly/aseprite-ai-artist install cursor     # ~/.cursor/mcp.json
+npx @pebbly/aseprite-ai-artist install --all      # all of the above
 ```
 
 Existing config is backed up first. `--dry-run` shows the change without making
@@ -99,7 +86,7 @@ it. `--project` writes into the repository instead of your home directory.
 ### Check it
 
 ```bash
-npx @with-pebbly/aseprite-ai-artist doctor
+npx @pebbly/aseprite-ai-artist doctor
 ```
 
 ## The tools

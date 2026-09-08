@@ -35,7 +35,7 @@ const [bridge, plugin] = await Promise.all([probe(CONTROL_PORT), probe(PLUGIN_PO
 // rather than implying a readiness this probe cannot see.
 const message = bridge
   ? `aseprite-ai-artist: bridge is up on :${CONTROL_PORT}. Call preflight before any drawing to confirm Aseprite itself is attached.`
-  : `aseprite-ai-artist: no bridge on :${CONTROL_PORT} yet — it starts on the first tool call. If drawing fails, run \`npx @with-pebbly/aseprite-ai-artist doctor\`.`;
+  : `aseprite-ai-artist: no bridge on :${CONTROL_PORT} yet — it starts on the first tool call. If drawing fails, run \`npx @pebbly/aseprite-ai-artist doctor\`.`;
 
 process.stdout.write(
   JSON.stringify({

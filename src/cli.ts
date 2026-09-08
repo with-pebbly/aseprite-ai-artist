@@ -163,7 +163,7 @@ async function runInstall(positional: string[], flags: Flags): Promise<void> {
     scope: scope as "user" | "project",
     projectDir,
     command: "npx",
-    args: ["-y", "@with-pebbly/aseprite-ai-artist@latest", "serve"],
+    args: ["-y", "@pebbly/aseprite-ai-artist@latest", "serve"],
     env,
     dryRun,
   };
@@ -310,9 +310,9 @@ Options:
   --version, --help
 
 Examples:
-  npx @with-pebbly/aseprite-ai-artist install --all --agents
-  npx @with-pebbly/aseprite-ai-artist install codex cursor --project
-  npx @with-pebbly/aseprite-ai-artist doctor
+  npx @pebbly/aseprite-ai-artist install --all --agents
+  npx @pebbly/aseprite-ai-artist install codex cursor --project
+  npx @pebbly/aseprite-ai-artist doctor
 `,
   );
 }

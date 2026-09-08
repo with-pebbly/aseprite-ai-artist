@@ -4,7 +4,9 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is
 [semver](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] — 2026-09-08
+
+First release. Includes every fix from the pre-release audit below.
 
 ### Fixed — 2026-09-08 multi-expert audit
 
@@ -117,11 +119,7 @@ carried a further fourteen items, all closed here.
 - `SECURITY.md` — threat model, the localhost bridge's real exposure, what
   `install` touches, and the `run_lua` gate.
 
-## [0.1.0] — 2026-09-08
-
-First release.
-
-### Added
+### Added — initial implementation
 
 - **MCP server** (`serve`) speaking protocol `2025-11-25`, with 18 tools grouped
   by noun. Every tool declares an `outputSchema` and returns

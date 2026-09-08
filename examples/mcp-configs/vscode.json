@@ -4,7 +4,7 @@
     "aseprite-ai-artist": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@with-pebbly/aseprite-ai-artist@latest", "serve"]
+      "args": ["-y", "@pebbly/aseprite-ai-artist@latest", "serve"]
     }
   }
 }

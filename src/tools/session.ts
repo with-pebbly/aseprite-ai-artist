@@ -52,7 +52,7 @@ export function registerSessionTools(server: McpServer, live: LiveClient): void 
             activeSprite: null,
             directive: live.bridgeConnected
               ? "The bridge is running but Aseprite is not attached. Ask the user to open Aseprite with the aseprite-ai-artist extension installed, then call preflight again."
-              : "The bridge is not running. Ask the user to run `npx @with-pebbly/aseprite-ai-artist doctor`.",
+              : "The bridge is not running. Ask the user to run `npx @pebbly/aseprite-ai-artist doctor`.",
           },
           "NOT READY — Aseprite is not connected. Do not attempt to edit files on disk instead.",
         );

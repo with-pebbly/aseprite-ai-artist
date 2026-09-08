@@ -3085,7 +3085,7 @@ local function handle_command(frame)
       error = {
         code = "unsupported_command",
         message = "This Aseprite extension does not implement '" .. tostring(frame.cmd) ..
-          "'. Update it with `npx @with-pebbly/aseprite-ai-artist install-extension` and restart Aseprite.",
+          "'. Update it with `npx @pebbly/aseprite-ai-artist install-extension` and restart Aseprite.",
         details = { command = frame.cmd, extensionVersion = EXTENSION_VERSION },
       },
     }

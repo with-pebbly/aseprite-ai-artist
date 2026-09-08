@@ -15,7 +15,7 @@ of them, and a plugin cannot ship one file that works everywhere.
 
 ## Decision
 
-TypeScript, published to npm, launched with `npx -y @with-pebbly/aseprite-ai-artist`.
+TypeScript, published to npm, launched with `npx -y @pebbly/aseprite-ai-artist`.
 
 No native dependencies. Specifically, no image library: previews and filmstrips
 are upscaled inside Aseprite, which already has a correct nearest-neighbour

@@ -10,7 +10,7 @@
  *
  * A plugin installed from git arrives as source with no build step, so this
  * builds once on first use and then runs the compiled CLI. Published npm users
- * never touch this file — they run `npx @with-pebbly/aseprite-ai-artist`.
+ * never touch this file — they run `npx @pebbly/aseprite-ai-artist`.
  */
 
 import { spawnSync } from "node:child_process";

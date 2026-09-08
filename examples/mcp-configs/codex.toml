@@ -1,11 +1,11 @@
 # OpenAI Codex CLI — ~/.codex/config.toml (or .codex/config.toml in a trusted project).
 # Codex reads TOML; the JSON that Claude Code and Cursor use will not work here.
 #
-# Written for you by:  npx @with-pebbly/aseprite-ai-artist install codex
+# Written for you by:  npx @pebbly/aseprite-ai-artist install codex
 
 [mcp_servers.aseprite-ai-artist]
 command = "npx"
-args = ["-y", "@with-pebbly/aseprite-ai-artist@latest", "serve"]
+args = ["-y", "@pebbly/aseprite-ai-artist@latest", "serve"]
 
 # Optional: point at a non-default Aseprite, or move the ports.
 # [mcp_servers.aseprite-ai-artist.env]
