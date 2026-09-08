@@ -1322,7 +1322,10 @@ local function apply_layer_op(s, op)
     return
   end
   if kind == "group" then
-    local group = s:newGroupLayer()
+    -- Sprite:newGroup(), not newGroupLayer(): the latter does not exist, and
+    -- indexing a missing field throws rather than returning nil, so the whole
+    -- batch transaction rolled back with "Field newGroupLayer does not exist".
+    local group = s:newGroup()
     group.name = op.name or "group"
     for _, name in ipairs(op.names or {}) do find_layer(s, name).parent = group end
     return
@@ -1573,6 +1576,12 @@ H["cel.apply"] = function(args)
       s:newCel(dstLayer, dstFrame, src.image:clone(), src.position)
       applied = 1
     elseif op == "link" then
+      -- FIXME(cel-link): LinkCels acts on the selected cel range, so it does
+      -- nothing for a frame that has no cel yet — and `applied` is incremented
+      -- regardless, so the reply claims work that never happened. Callers that
+      -- want a static layer across frames have to use draw 'blit' per frame
+      -- instead. Count only frames that gained a linked cel, and fault when a
+      -- target frame is empty.
       local frames = args.frames or {}
       preserving_site(function()
         app.layer = layer
