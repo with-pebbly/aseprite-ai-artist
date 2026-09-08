@@ -15,7 +15,7 @@
 --------------------------------------------------------------------------------
 
 local PROTOCOL_VERSION = 1
-local EXTENSION_VERSION = "0.1.0"
+local EXTENSION_VERSION = "0.1.1"
 
 -- Optional capabilities. The wire version stays 1 across builds; new command
 -- families are gated on these flags plus the loud unsupported_command reply,

@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "aseprite-ai-artist",
   "displayName": "Aseprite AI Artist",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Draw pixel art in a live Aseprite window. An MCP server with a deliberately small tool surface, an encoded pixel-art rulebook, /pixel-* workflows and review/palette/rig/animation subagents. The same skills are served over MCP, so Codex, Gemini CLI and Cursor get them too.",
   "author": {
     "name": "with-pebbly",
