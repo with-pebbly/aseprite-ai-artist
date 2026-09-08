@@ -195,7 +195,7 @@ test("a reply missing a field the caller needs is an error, not undefined", asyn
   await c.waitForPlugin(2_000);
 
   await assert.rejects(
-    () => c.call("draw.batch", {}, ["opsApplied", "pixelsChanged"]),
+    () => c.call("draw.batch", {}, { expect: ["opsApplied", "pixelsChanged"] }),
     (err: Error & { code?: string; details?: { missing?: string[] } }) => {
       assert.equal(err.code, "aseprite_error");
       assert.deepEqual(err.details?.missing, ["pixelsChanged"]);
@@ -205,7 +205,7 @@ test("a reply missing a field the caller needs is an error, not undefined", asyn
   );
 
   // A field that is present but null is an answer, not an omission.
-  const data = await c.call<{ sprite: null }>("session.site", {}, ["sprite"]);
+  const data = await c.call<{ sprite: null }>("session.site", {}, { expect: ["sprite"] });
   assert.equal(data.sprite, null);
 
   c.close();

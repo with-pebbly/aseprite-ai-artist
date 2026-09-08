@@ -68,7 +68,9 @@ export function registerCraftTools(server: McpServer, live: LiveClient): void {
         if (args.op === "replace" && (!args.from || !args.to)) {
           return fail(new Error("op 'replace' needs both `from` and `to`."));
         }
-        const data = await live.call<Record<string, unknown>>("recolor.apply", args, ["pixelsChanged"]);
+        const data = await live.call<Record<string, unknown>>("recolor.apply", args, {
+          expect: ["pixelsChanged"],
+        });
         const mapping = (data.mapping as { from: string; to: string; pixels: number }[]) ?? [];
         return ok(
           data,

@@ -1,6 +1,6 @@
 {
   "name": "@pebbly/aseprite-ai-artist",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Agent-native control layer for Aseprite. MCP server (2025-11-25 spec, designed forward to 2026-07-28) + cross-agent skills for Claude Code, Codex, Gemini CLI and Cursor.",
   "license": "MIT",
   "type": "module",

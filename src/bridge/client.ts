@@ -123,7 +123,7 @@ export class LiveClient {
   }
 
   /**
-   * @param expect Field names the caller goes on to read. Nothing else checks
+   * @param opts.expect Field names the caller goes on to read. Nothing else checks
    *   them: `call<T>` is a compile-time claim about data that crossed a socket
    *   from a separately installed extension, and an extension older than this
    *   server answers a command it knows with fields it does not have. Without
@@ -150,8 +150,10 @@ export class LiveClient {
   async call<T = unknown>(
     cmd: string,
     args: Record<string, unknown> = {},
-    expect: readonly string[] = [],
+    opts: { expect?: readonly string[]; timeoutMs?: number } = {},
   ): Promise<T> {
+    const expect = opts.expect ?? [];
+    const timeoutMs = opts.timeoutMs ?? this.timeoutMs;
     if (!this.bridgeConnected) {
       await this.waitForBridge(2_000);
       if (!this.bridgeConnected) throw notConnected("Bridge process is not reachable.");
@@ -165,12 +167,12 @@ export class LiveClient {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(
-          new LiveError("timeout", `Aseprite did not answer '${cmd}' within ${this.timeoutMs}ms.`, {
+          new LiveError("timeout", `Aseprite did not answer '${cmd}' within ${timeoutMs}ms.`, {
             cmd,
             doNotFallBackToDisk: true,
           }),
         );
-      }, this.timeoutMs);
+      }, timeoutMs);
 
       this.pending.set(id, {
         resolve: (value: unknown) => {

@@ -91,7 +91,14 @@ export function registerAssetTools(server: McpServer, live: LiveClient): void {
     },
     async (args) => {
       try {
-        const data = await live.call<Record<string, unknown>>("export.run", args, ["files"]);
+        const data = await live.call<Record<string, unknown>>("export.run", args, {
+          expect: ["files"],
+          // Aseprite's first GIF write in a session takes tens of seconds — it
+          // warms a codec once, then answers in about two. Measured at 38s on
+          // a 32x32 sprite, so the default 20s turned the very first animation
+          // export anyone tries into a timeout on work that then succeeded.
+          timeoutMs: 120_000,
+        });
         const files = (data.files as string[]) ?? [];
         return ok(data, `Wrote ${files.length} file(s): ${files.join(", ")}`);
       } catch (err) {

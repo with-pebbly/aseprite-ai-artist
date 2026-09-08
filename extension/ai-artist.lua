@@ -15,7 +15,7 @@
 --------------------------------------------------------------------------------
 
 local PROTOCOL_VERSION = 1
-local EXTENSION_VERSION = "0.1.2"
+local EXTENSION_VERSION = "0.1.3"
 
 -- Optional capabilities. The wire version stays 1 across builds; new command
 -- families are gated on these flags plus the loud unsupported_command reply,
@@ -2211,7 +2211,16 @@ H["export.run"] = function(args)
       files[#files + 1] = path
 
     elseif op == "gif" or op == "aseprite" then
-      s:saveCopyAs(path)
+      -- NOT Sprite:saveCopyAs. Writing an RGB sprite to GIF needs a colour
+      -- quantisation the UI asks about, and that dialog has no `ui` switch to
+      -- turn off from the sprite method — the call simply never returns. It
+      -- looks like a hang rather than a prompt, because the dialog pumps events
+      -- while it waits, so every other command keeps answering normally.
+      -- Headless tests never see it: `aseprite -b` has no dialogs at all.
+      preserving_site(function()
+        app.sprite = s
+        app.command.SaveFileCopyAs{ ui = false, filename = path }
+      end)
       files[#files + 1] = path
 
     elseif op == "frames" then

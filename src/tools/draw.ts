@@ -169,12 +169,9 @@ export function registerDrawTools(server: McpServer, live: LiveClient): void {
     },
     async (args) => {
       try {
-        const data = await live.call<Record<string, unknown>>("draw.batch", args, [
-          "opsApplied",
-          "pixelsChanged",
-          "layer",
-          "frame",
-        ]);
+        const data = await live.call<Record<string, unknown>>("draw.batch", args, {
+          expect: ["opsApplied", "pixelsChanged", "layer", "frame"],
+        });
         const snapped = (data.colorsSnapped as { from: string; to: string; deltaE: number }[]) ?? [];
         const far = snapped.filter((s) => s.deltaE > 12);
         const summary = [

@@ -4,6 +4,28 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is
 [semver](https://semver.org/).
 
+## [0.1.3] — 2026-09-08
+
+### Fixed
+
+- **Exporting a GIF from a live window never returned.** Writing an RGB sprite
+  to GIF needs a colour quantisation that Aseprite asks about, and
+  `Sprite:saveCopyAs` has no way to decline the dialog. The diagnosis was
+  misleading: a modal dialog pumps events while it waits, so every other command
+  kept answering normally and only the export looked stuck. Now uses
+  `SaveFileCopyAs{ui = false}`. Headless tests could never catch this — `aseprite
+  -b` has no dialogs at all.
+- **Even fixed, the first GIF export timed out.** Aseprite warms its GIF codec
+  once per session: measured at 38s for the first write of a 32x32 sprite and
+  about 2s for every one after, against a 20s client timeout. So the first
+  animation anyone exported failed on work that then succeeded. `export` now
+  gets its own 120s budget.
+
+### Changed
+
+- `LiveClient.call` takes an options object (`expect`, `timeoutMs`) instead of a
+  third positional argument.
+
 ## [0.1.2] — 2026-09-08
 
 ### Fixed

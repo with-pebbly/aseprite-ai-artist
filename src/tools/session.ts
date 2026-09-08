@@ -59,7 +59,7 @@ export function registerSessionTools(server: McpServer, live: LiveClient): void 
       }
 
       try {
-        const site = await live.call<Record<string, unknown>>("session.site", {}, ["openSprites"]);
+        const site = await live.call<Record<string, unknown>>("session.site", {}, { expect: ["openSprites"] });
         const sprite = site.sprite as Record<string, unknown> | null;
         return ok(
           {
@@ -147,14 +147,9 @@ export function registerSessionTools(server: McpServer, live: LiveClient): void 
     },
     async (args) => {
       try {
-        const data = await live.call<Record<string, unknown>>("sprite.info", args, [
-          "name",
-          "width",
-          "height",
-          "colorMode",
-          "frameCount",
-          "layers",
-        ]);
+        const data = await live.call<Record<string, unknown>>("sprite.info", args, {
+          expect: ["name", "width", "height", "colorMode", "frameCount", "layers"],
+        });
         return ok(data, describeSprite(data));
       } catch (err) {
         return fail(err);
