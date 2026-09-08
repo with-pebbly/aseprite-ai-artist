@@ -59,7 +59,11 @@ export function registerAssetTools(server: McpServer, live: LiveClient): void {
       inputSchema: {
         op: z.enum(["png", "gif", "spritesheet", "frames", "aseprite"]),
         sprite: targetShape.sprite,
-        path: z.string().describe("Output file path. For 'frames', a pattern like 'walk_{frame}.png'."),
+        path: z
+          .string()
+          .describe(
+            "Output file path. For 'frames', a pattern containing {frame}, e.g. 'walk_{frame}.png' — Aseprite expands it into one file per frame, numbered from 0.",
+          ),
         frame: targetShape.frame,
         scale: z.number().int().min(1).max(16).default(1).describe("Integer upscale, nearest-neighbour."),
         sheetType: z

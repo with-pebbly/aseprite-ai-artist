@@ -10,10 +10,15 @@
  *
  * Run it against an isolated Aseprite so your own documents are never involved:
  *
- *   node dist/cli.js bridge &
+ *   PORT=19931   # anything but the 9931/9932 defaults
+ *   node dist/cli.js bridge --plugin-port $PORT --control-port $((PORT+1)) &
  *   ASEPRITE_USER_FOLDER=/tmp/ase-home node dist/cli.js install-extension --dir /tmp/ase-home
- *   ASEPRITE_USER_FOLDER=/tmp/ase-home /path/to/aseprite &
- *   node tests/e2e.mjs
+ *   ASEPRITE_AI_PLUGIN_PORT=$PORT ASEPRITE_USER_FOLDER=/tmp/ase-home /path/to/aseprite &
+ *   E2E_PLUGIN_PORT=$PORT node tests/e2e.mjs
+ *
+ * Use non-default ports unless you are certain no real Aseprite session is
+ * attached: the bridge accepts the last plugin that connects, so running this
+ * against the defaults can steal a session you are actually working in.
  *
  * It creates its own 16x16 sprite and closes it without saving.
  */
@@ -21,10 +26,15 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer } from "../dist/server.js";
 
-const { server, live } = createServer({ pluginPort: 9931, controlPort: 9932, autoSpawnBridge: false });
+const pluginPort = Number(process.env.E2E_PLUGIN_PORT || 9931);
+const controlPort = Number(process.env.E2E_CONTROL_PORT || pluginPort + 1);
+const { server, live } = createServer({ pluginPort, controlPort, autoSpawnBridge: false });
 const [ct, st] = InMemoryTransport.createLinkedPair();
 const client = new Client({ name: "e2e", version: "0" });
 await Promise.all([client.connect(ct), server.connect(st)]);
+
+/** Files this run created, removed at the end. */
+const written = [];
 
 const call = async (name, args = {}) => {
   const r = await client.callTool({ name, arguments: args });
@@ -83,6 +93,7 @@ console.log("— recolor shade");
 console.log("  ", (await call("recolor", { op: "shade", amount: -0.25, frame: 1 })).content[0].text.slice(0, 200));
 
 console.log("— export png");
+written.push(process.env.E2E_OUT || "/tmp/aseprite-ai-artist-e2e.png");
 console.log("  ", (await call("export", { op: "png", frame: 1, path: process.env.E2E_OUT || "/tmp/aseprite-ai-artist-e2e.png", scale: 8 })).content[0].text);
 
 console.log("— tileset: paint a mockup, pack it, export for Tiled");
@@ -106,6 +117,7 @@ console.log("  ", packed.content[0].text);
 console.log("   structured:", JSON.stringify(packed.structuredContent));
 const tsOut = (process.env.E2E_OUT || "/tmp/aseprite-ai-artist-e2e.png").replace(/\.png$/, "-terrain.tsj");
 const exported = await call("tileset", { op: "export", layer: "terrain", path: tsOut, format: "tiled" });
+written.push(...(exported.structuredContent.files ?? []));
 console.log("  ", exported.content[0].text);
 console.log("— look at the packed tileset");
 const tsLook = await call("look", { op: "preview" });
@@ -121,5 +133,16 @@ console.log("  ", (await call("sprite_manage", { op: "close", force: true })).co
 
 live.close();
 await server.close();
+
+// Clean up what this run wrote, so a repeat run starts from nothing.
+const { rmSync } = await import("node:fs");
+for (const file of written) {
+  try {
+    rmSync(file, { force: true });
+  } catch {
+    /* best effort — the point is not to accumulate, not to guarantee removal */
+  }
+}
+
 console.log("\nE2E OK");
 process.exit(0);

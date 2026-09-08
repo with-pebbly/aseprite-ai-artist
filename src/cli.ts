@@ -103,7 +103,12 @@ async function serve(opts: { pluginPort: number; controlPort: number; allowLua: 
 
   const shutdown = () => {
     live.close();
-    void server.close().finally(() => process.exit(0));
+    // .finally() forwards a rejection, and nothing would catch it. Exit on both
+    // paths explicitly rather than relying on process.exit winning the race.
+    server.close().then(
+      () => process.exit(0),
+      () => process.exit(1),
+    );
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
@@ -124,7 +129,11 @@ async function runBridge(opts: { pluginPort: number; controlPort: number }): Pro
     return;
   }
 
-  const stop = () => void bridge.stop().finally(() => process.exit(0));
+  const stop = () =>
+    bridge.stop().then(
+      () => process.exit(0),
+      () => process.exit(1),
+    );
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 

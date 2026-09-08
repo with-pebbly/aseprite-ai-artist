@@ -80,6 +80,7 @@ export function registerPaletteTools(server: McpServer, live: LiveClient): void 
         sprite: z.string().optional(),
         colors: z.array(z.string()).optional(),
         size: z.number().int().optional(),
+        path: z.string().optional().describe("Palette file read by op 'load'."),
         usage: z
           .array(z.object({ index: z.number().int(), hex: z.string(), pixels: z.number().int() }))
           .optional(),

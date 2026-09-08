@@ -37,4 +37,6 @@ the wire per drawing operation would not scale.
 Acceptable for a tool whose next action waits on a human looking at a sprite.
 
 **Accepted cost.** The CIELAB colour maths now exists twice, once per language.
-Both are tested against the same expectations.
+Both are pinned to the same numeric fixtures (`tests/color.test.ts` and the
+cross-language check in `tests/extension.test.lua`), so a drift fails a test —
+though only the TypeScript half runs in CI, since CI has no Aseprite.

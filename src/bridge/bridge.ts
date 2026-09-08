@@ -26,6 +26,16 @@ import {
   splitNamespacedId,
 } from "../lib/protocol.js";
 
+/**
+ * Frames larger than this are refused. A 64x64 pixel read is a few hundred KB;
+ * ws defaults to 100 MiB, which on an unauthenticated localhost socket is a
+ * one-line memory-exhaustion vector.
+ */
+const MAX_FRAME_BYTES = 16 * 1024 * 1024;
+
+/** Control clients are one per agent window; a hundred means something is wrong. */
+const MAX_CONTROL_CLIENTS = 64;
+
 export interface BridgeOptions {
   pluginPort?: number;
   controlPort?: number;
@@ -151,6 +161,18 @@ export class Bridge {
   // ── control side ───────────────────────────────────────────────────────────
 
   private onControlConnect(socket: WebSocket): void {
+    if (this.clients.size >= MAX_CONTROL_CLIENTS) {
+      send(socket, {
+        id: "connect",
+        ok: false,
+        error: {
+          code: "too_large",
+          message: `Refusing a ${MAX_CONTROL_CLIENTS + 1}th control client; something is opening connections in a loop.`,
+        },
+      });
+      socket.close();
+      return;
+    }
     const id = this.nextClientId++;
     this.clients.set(id, { id, socket });
 
@@ -236,7 +258,7 @@ export class BridgeBindError extends Error {
  */
 function listen(port: number): Promise<WebSocketServer | null> {
   return new Promise((resolve, reject) => {
-    const server = new WebSocketServer({ host: "127.0.0.1", port });
+    const server = new WebSocketServer({ host: "127.0.0.1", port, maxPayload: MAX_FRAME_BYTES });
     const onError = (err: NodeJS.ErrnoException) => {
       server.removeListener("listening", onListening);
       if (err.code === "EADDRINUSE") resolve(null);

@@ -29,6 +29,20 @@ local function check(name, fn)
   end
 end
 
+--- Run `fn(sprite)` against a scratch sprite that is ALWAYS closed and always
+--- restores the active document, even when an assertion inside it throws.
+--- Without this, one new failing assertion strands app.sprite on a closed mock
+--- and every later check fails for an unrelated reason.
+local function withMockSprite(w, h, mode, fn)
+  local previous = app.sprite
+  local mock = Sprite(w, h, mode or ColorMode.RGB)
+  app.sprite = mock
+  local ok, err = pcall(fn, mock)
+  pcall(function() mock:close() end)
+  if previous then pcall(function() app.sprite = previous end) end
+  if not ok then error(err, 0) end
+end
+
 local function call(cmd, args)
   local reply = A.handleCommand({ id = "t", cmd = cmd, args = args or {} })
   if not reply.ok then
@@ -238,8 +252,7 @@ end)
 check("tileset pack deduplicates a mockup and rebuilds it exactly", function()
   -- A 32x32 mockup of 8x8 cells: a 2x2 checker of two distinct tiles, so 16
   -- cells must collapse to 2 unique tiles.
-  local mock = Sprite(32, 32, ColorMode.RGB)
-  app.sprite = mock
+  withMockSprite(32, 32, ColorMode.RGB, function()
   local painted = app.layer
   painted.name = "mockup"
 
@@ -288,13 +301,11 @@ check("tileset pack deduplicates a mockup and rebuilds it exactly", function()
     end
   end
 
-  mock:close()
-  app.sprite = sprite
+  end)
 end)
 
 check("tileset pack refuses a canvas that is not a whole number of tiles", function()
-  local odd = Sprite(30, 32, ColorMode.RGB)
-  app.sprite = odd
+  withMockSprite(30, 32, ColorMode.RGB, function()
   app.layer.name = "mockup"
   A.handleCommand({ id = "t", cmd = "draw.batch", args = { layer = "mockup", paletteLock = false,
     ops = { { kind = "rect", rect = { x = 0, y = 0, width = 10, height = 10 },
@@ -304,13 +315,11 @@ check("tileset pack refuses a canvas that is not a whole number of tiles", funct
   assert(not reply.ok, "packing a 30px canvas into 16px tiles should refuse")
   assertEq(reply.error.code, "invalid_args", "error code")
   assert(reply.error.message:find("whole number"), "message should explain why")
-  odd:close()
-  app.sprite = sprite
+  end)
 end)
 
 check("tileset export writes a Tiled tileset, map and packed png", function()
-  local mock = Sprite(32, 32, ColorMode.RGB)
-  app.sprite = mock
+  withMockSprite(32, 32, ColorMode.RGB, function()
   app.layer.name = "mockup"
   A.handleCommand({ id = "t", cmd = "draw.batch", args = { layer = "mockup", paletteLock = false,
     ops = {
@@ -360,13 +369,11 @@ check("tileset export writes a Tiled tileset, map and packed png", function()
   assert(data[4] > 0 and data[4] <= doc.tilecount, "gid " .. data[4] .. " out of range")
   assert(data[1] ~= data[4], "two differently coloured cells must be different tiles")
 
-  mock:close()
-  app.sprite = sprite
+  end)
 end)
 
 check("tileset export writes Godot and JSON targets", function()
-  local mock = Sprite(32, 32, ColorMode.RGB)
-  app.sprite = mock
+  withMockSprite(32, 32, ColorMode.RGB, function()
   app.layer.name = "mockup"
   A.handleCommand({ id = "t", cmd = "draw.batch", args = { layer = "mockup", paletteLock = false,
     ops = {
@@ -410,13 +417,11 @@ check("tileset export writes Godot and JSON targets", function()
   assert(not bad.ok, "an unknown format must be refused")
   assertEq(bad.error.code, "invalid_args", "error code")
 
-  mock:close()
-  app.sprite = sprite
+  end)
 end)
 
 check("tileset stamp reports placements it could not make", function()
-  local mock = Sprite(32, 32, ColorMode.RGB)
-  app.sprite = mock
+  withMockSprite(32, 32, ColorMode.RGB, function()
   app.layer.name = "mockup"
   A.handleCommand({ id = "t", cmd = "draw.batch", args = { layer = "mockup", paletteLock = false,
     ops = { { kind = "rect", rect = { x = 0, y = 0, width = 16, height = 16 },
@@ -435,16 +440,13 @@ check("tileset stamp reports placements it could not make", function()
   assertEq(reply.data.tileCount, 1, "placed")
   assertEq(reply.data.skipped, 2, "skipped")
 
-  mock:close()
-  app.sprite = sprite
+  end)
 end)
 
 check("blob47 export writes a wangset whose ids are atlas slots", function()
   -- 48 tiles: the reserved empty one plus the 47 blob tiles. Built as a strip
   -- of 48 distinct 8px cells so packing yields exactly 47 unique tiles.
-  local w = 48 * 8
-  local mock = Sprite(w, 8, ColorMode.RGB)
-  app.sprite = mock
+  withMockSprite(48 * 8, 8, ColorMode.RGB, function()
   app.layer.name = "mockup"
   local ops = {}
   for i = 0, 46 do
@@ -490,13 +492,11 @@ check("blob47 export writes a wangset whose ids are atlas slots", function()
   assertEq(ws.wangtiles[1].wangid[1], 2, "first tile has no neighbours")
   assertEq(ws.wangtiles[47].wangid[1], 1, "last tile is fully surrounded")
 
-  mock:close()
-  app.sprite = sprite
+  end)
 end)
 
 check("tileset export refuses blob47 without a full blob set", function()
-  local mock = Sprite(32, 32, ColorMode.RGB)
-  app.sprite = mock
+  withMockSprite(32, 32, ColorMode.RGB, function()
   app.layer.name = "mockup"
   A.handleCommand({ id = "t", cmd = "draw.batch", args = { layer = "mockup", paletteLock = false,
     ops = { { kind = "rect", rect = { x = 0, y = 0, width = 16, height = 16 },
@@ -509,8 +509,7 @@ check("tileset export refuses blob47 without a full blob set", function()
   } })
   assert(not reply.ok, "a 1-tile set must not export as blob47")
   assert(reply.error.message:find("47"), "message should name the requirement")
-  mock:close()
-  app.sprite = sprite
+  end)
 end)
 
 -- ── regressions from the 2026-09-08 multi-expert audit ──────────────────────
@@ -518,8 +517,7 @@ end)
 check("a closed polyline draws its closing edge", function()
   -- The outline loop stopped at #points - 1 while the fill loop wrapped, so a
   -- "closed" triangle shipped with one side missing and reported success.
-  local tri = Sprite(16, 16, ColorMode.RGB)
-  app.sprite = tri
+  withMockSprite(16, 16, ColorMode.RGB, function()
   local ok = A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
     { kind = "polyline", closed = true, color = "#ff0000",
       points = { { x = 0, y = 0 }, { x = 10, y = 0 }, { x = 10, y = 10 } } } } } })
@@ -529,14 +527,13 @@ check("a closed polyline draws its closing edge", function()
   local idx = region.grid[5 * 16 + 5 + 1]
   assert(idx ~= 0, "the closing edge is missing: (5,5) is transparent")
   assertEq(region.colors[idx + 1], "#ff0000", "colour on the closing edge")
-  tri:close(); app.sprite = sprite
+  end)
 end)
 
 check("a thick line paints its whole brush into a tight cel", function()
   -- op_bounds ignored thickness, so the cel was grown to the endpoints only and
   -- Draw.pixel silently clipped the rest of the stamp.
-  local dot = Sprite(32, 32, ColorMode.RGB)
-  app.sprite = dot
+  withMockSprite(32, 32, ColorMode.RGB, function()
   A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
     { kind = "pixels", color = "#ffffff", points = { { x = 16, y = 16 } } } } } })
   local res = A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
@@ -544,27 +541,25 @@ check("a thick line paints its whole brush into a tight cel", function()
       thickness = 7 } } } })
   assert(res.ok, "draw failed: " .. tostring(res.error and res.error.message))
   assertEq(res.data.pixelsChanged, 49, "a 7x7 brush must land all 49 pixels")
-  dot:close(); app.sprite = sprite
+  end)
 end)
 
 check("fuzzy tile packing refuses a non-RGB sprite", function()
   -- cell_distance reads RGB channels; on an indexed sprite those are palette
   -- indices, and comparing them merged two maximally different tiles into one.
-  local idx = Sprite(32, 16, ColorMode.INDEXED)
-  app.sprite = idx
+  withMockSprite(32, 16, ColorMode.INDEXED, function()
   local reply = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
     op = "pack", tileWidth = 16, tileHeight = 16, tolerance = 50 } })
   assert(not reply.ok, "tolerance on an indexed sprite must be refused")
   assertEq(reply.error.code, "invalid_args", "error code")
   assert(reply.error.message:find("RGB"), "message should name the requirement")
-  idx:close(); app.sprite = sprite
+  end)
 end)
 
 check("rotate by 0 reports that it changed nothing", function()
   -- `changed` was set after the branch chain, so a no-op claimed a full-canvas
   -- change and broke any agent using pixelsChanged to verify idempotency.
-  local rot = Sprite(8, 8, ColorMode.RGB)
-  app.sprite = rot
+  withMockSprite(8, 8, ColorMode.RGB, function()
   A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
     { kind = "pixels", color = "#00ff00", points = { { x = 1, y = 1 } } } } } })
   local zero = A.handleCommand({ id = "t", cmd = "transform.apply", args = { op = "rotate", angle = 0 } })
@@ -573,14 +568,13 @@ check("rotate by 0 reports that it changed nothing", function()
   local ninety = A.handleCommand({ id = "t", cmd = "transform.apply", args = { op = "rotate", angle = 90 } })
   assert(ninety.ok, "rotate 90 failed: " .. tostring(ninety.error and ninety.error.message))
   assert(ninety.data.pixelsChanged > 0, "a 90-degree rotation does change something")
-  rot:close(); app.sprite = sprite
+  end)
 end)
 
 check("validate actually runs its outline and banding checks", function()
   -- Both were advertised in the schema AND in the handler's own default set,
   -- but no branch read them: validate answered "Clean." without running either.
-  local v = Sprite(24, 24, ColorMode.RGB)
-  app.sprite = v
+  withMockSprite(24, 24, ColorMode.RGB, function()
   -- A filled block with a deliberately broken outline: one edge pixel recoloured.
   A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
     { kind = "rect", rect = { x = 4, y = 4, width = 16, height = 16 },
@@ -599,14 +593,13 @@ check("validate actually runs its outline and banding checks", function()
     if f.check == "banding" then band = true end
   end
   assert(band, "expected a banding finding for a 16px straight colour boundary")
-  v:close(); app.sprite = sprite
+  end)
 end)
 
 check("cel list reports linked cels as linked", function()
   -- `linked = c.image ~= nil and false or false` collapsed to a constant false,
   -- so the tool always answered "nothing is linked".
-  local anim = Sprite(8, 8, ColorMode.RGB)
-  app.sprite = anim
+  withMockSprite(8, 8, ColorMode.RGB, function()
   A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
     { kind = "pixels", color = "#ffffff", points = { { x = 0, y = 0 } } } } } })
   local before = call("cel.apply", { op = "list" })
@@ -619,14 +612,13 @@ check("cel list reports linked cels as linked", function()
   local linked = 0
   for _, c in ipairs(after.cels) do if c.linked then linked = linked + 1 end end
   assert(linked >= 2, "expected the duplicated linked cels to report linked=true, got " .. linked)
-  anim:close(); app.sprite = sprite
+  end)
 end)
 
 check("gradient honours dither and every declared direction", function()
   -- `dither` was declared in the schema and never read, and `diagonal`/`radial`
   -- both silently fell through to the vertical branch.
-  local g = Sprite(16, 16, ColorMode.RGB)
-  app.sprite = g
+  withMockSprite(16, 16, ColorMode.RGB, function()
   local function grid(direction, dither)
     A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false, ops = {
       { kind = "clear" },
@@ -666,7 +658,7 @@ check("gradient honours dither and every declared direction", function()
   local mixed = false
   for row = 0, 15 do if rowColours(dithered, row) > 1 then mixed = true end end
   assert(mixed, "a dithered vertical gradient must mix colours within a row")
-  g:close(); app.sprite = sprite
+  end)
 end)
 
 check("a new sprite reports an identifier that resolves", function()
@@ -687,8 +679,7 @@ check("a new sprite reports an identifier that resolves", function()
 end)
 
 check("selectionOnly refuses rather than widening to the whole cel", function()
-  local sel = Sprite(16, 16, ColorMode.RGB)
-  app.sprite = sel
+  withMockSprite(16, 16, ColorMode.RGB, function()
   A.handleCommand({ id = "t", cmd = "select.apply", args = { op = "none" } })
   local reply = A.handleCommand({ id = "t", cmd = "draw.batch", args = {
     selectionOnly = true, paletteLock = false,
@@ -696,14 +687,13 @@ check("selectionOnly refuses rather than widening to the whole cel", function()
               color = "#ff0000", fill = "#ff0000" } } } })
   assert(not reply.ok, "selectionOnly with no selection must refuse, not repaint everything")
   assertEq(reply.error.code, "invalid_args", "error code")
-  sel:close(); app.sprite = sprite
+  end)
 end)
 
 check("stamping onto a brand-new tilemap layer creates a TILEMAP cel", function()
   -- The known-bug regression test only ever stamped onto a layer that `pack`
   -- had already given a cel, so it never took the branch that was the fix.
-  local t = Sprite(32, 32, ColorMode.RGB)
-  app.sprite = t
+  withMockSprite(32, 32, ColorMode.RGB, function(t)
   local made = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
     op = "create_layer", name = "terrain", tileWidth = 16, tileHeight = 16 } })
   assert(made.ok, "create_layer failed: " .. tostring(made.error and made.error.message))
@@ -729,7 +719,83 @@ check("stamping onto a brand-new tilemap layer creates a TILEMAP cel", function(
   assert(cel, "stamp must have created a cel")
   assertEq(tostring(cel.image.colorMode), tostring(ColorMode.TILEMAP), "cel must be a TILEMAP image")
   assertEq(app.pixelColor.tileI(cel.image:getPixel(0, 0)), tile.index, "the stamped tile index")
-  t:close(); app.sprite = sprite
+  end)
+end)
+
+check("export op frames writes one file per frame", function()
+  -- The only export op with no coverage at any level. The implementation is a
+  -- single saveCopyAs and relies on Aseprite expanding {frame} itself, which is
+  -- true but was entirely unverified.
+  withMockSprite(8, 8, ColorMode.RGB, function(s)
+    A.handleCommand({ id = "t", cmd = "draw.batch", args = { paletteLock = false,
+      ops = { { kind = "pixels", color = "#ff0000", points = { { x = 0, y = 0 } } } } } })
+    A.handleCommand({ id = "t", cmd = "frame.apply", args = { op = "add", count = 2 } })
+
+    local dir = app.fs.joinPath(app.fs.tempPath, "ai-artist-frames-test")
+    app.fs.makeAllDirectories(dir)
+    for _, existing in ipairs(app.fs.listFiles(dir)) do
+      os.remove(app.fs.joinPath(dir, existing))
+    end
+
+    local reply = A.handleCommand({ id = "t", cmd = "export.run", args = {
+      op = "frames", path = app.fs.joinPath(dir, "walk_{frame}.png") } })
+    assert(reply.ok, "frames export failed: " .. tostring(reply.error and reply.error.message))
+
+    local written = 0
+    for _ in ipairs(app.fs.listFiles(dir)) do written = written + 1 end
+    assertEq(written, 3, "one PNG per frame")
+  end)
+end)
+
+check("Lua CIELAB agrees with the TypeScript port, number for number", function()
+  -- These are the same fixtures tests/color.test.ts pins. ADR-0001 accepts the
+  -- duplication only on the condition that both are held to one expectation;
+  -- before this check that condition was documented but not enforced.
+  local function lab(hex)
+    local l, a, b = A.rgbToLab(A.hexToColor(hex).red, A.hexToColor(hex).green, A.hexToColor(hex).blue)
+    return l, a, b
+  end
+  local white = select(1, lab("#ffffff"))
+  local black = select(1, lab("#000000"))
+  assert(math.abs(white - 100) < 0.5, "white L* should be 100, got " .. white)
+  assert(math.abs(black) < 0.5, "black L* should be 0, got " .. black)
+
+  local function de(h1, h2)
+    local c1, c2 = A.hexToColor(h1), A.hexToColor(h2)
+    return A.deltaE(c1.red, c1.green, c1.blue, c2.red, c2.green, c2.blue)
+  end
+  assertEq(de("#ff0000", "#ff0000"), 0, "identical colours")
+  assert(de("#ff0000", "#fe0101") < 2, "near-identical reds should be under 2")
+  assert(de("#ff0000", "#0000ff") > 100, "red vs blue should exceed 100")
+
+  -- The case that motivates CIELAB over RGB: a mid grey must snap to grey, not
+  -- to saturated green, which naive RGB distance would pick.
+  -- Capture BEFORE creating: Sprite() makes itself active, so capturing after
+  -- would restore the scratch document we are about to close.
+  local previous = app.sprite
+  local pal = Sprite(1, 1, ColorMode.RGB)
+  pal.palettes[1]:resize(4)
+  pal.palettes[1]:setColor(0, Color{ r = 0, g = 0, b = 0 })
+  pal.palettes[1]:setColor(1, Color{ r = 128, g = 128, b = 128 })
+  pal.palettes[1]:setColor(2, Color{ r = 0, g = 255, b = 0 })
+  pal.palettes[1]:setColor(3, Color{ r = 255, g = 255, b = 255 })
+  local snapped, distance = A.snapColorToPalette(pal, Color{ r = 122, g = 122, b = 122 })
+  assertEq(A.colorToHex(snapped, false), "#808080", "mid grey must snap to grey")
+  assert(distance < 5, "snap distance should be small, got " .. tostring(distance))
+  pal:close()
+  if previous then app.sprite = previous end
+
+  -- Shading must cool the shadow, not merely darken it — the same property
+  -- tests/color.test.ts asserts for hueShiftShade.
+  local base = A.hexToColor("#c04030")
+  local shadow = A.shadeColor(base, -0.4)
+  local light = A.shadeColor(base, 0.4)
+  assert(select(1, A.rgbToLab(shadow.red, shadow.green, shadow.blue))
+       < select(1, A.rgbToLab(base.red, base.green, base.blue)), "shadow must be darker")
+  assert(select(1, A.rgbToLab(light.red, light.green, light.blue))
+       > select(1, A.rgbToLab(base.red, base.green, base.blue)), "highlight must be lighter")
+  assert((base.red - shadow.red) > (base.blue - shadow.blue),
+    "red must fall faster than blue when shading down (the hue shift)")
 end)
 
 check("json encoder emits arrays for empty tables", function()

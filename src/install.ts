@@ -117,7 +117,10 @@ function installToml(file: string, opts: InstallOptions): InstallResult {
   if (opts.dryRun) return { client: "codex", file, written: false, note: block };
 
   let existing = existsSync(file) ? readFileSync(file, "utf8") : "";
-  const start = existing.indexOf(header);
+  // Anchored to the start of a line: a bare indexOf would also match the header
+  // text inside a comment or a string value and splice around the wrong offset.
+  const headerAt = new RegExp(`^\\s*${header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "m").exec(existing);
+  const start = headerAt?.index ?? -1;
   if (start !== -1) {
     // Replace from our header up to the next top-level table that is not ours.
     const rest = existing.slice(start + header.length);

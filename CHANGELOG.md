@@ -65,6 +65,53 @@ before it was fixed and has a regression test that fails without the fix.
   decision to target 2025-11-25. `engines.node` also promised 20.10 while the
   test script needs 22.6.
 
+### Fixed — audit round two
+
+The six reviewers' full reports arrived after the first round of fixes and
+carried a further fourteen items, all closed here.
+
+- **`snapToPalette` promised a transparency guard it did not have.** A fully
+  transparent input now snaps to itself instead of to the nearest opaque colour,
+  which would have painted over deliberate holes.
+- **`refused` and `too_large` error codes were declared and never raised**, so
+  every "you asked for something out of bounds" refusal arrived as a generic
+  `aseprite_error` and an agent could not tell it apart from an internal
+  failure. Both are now used at the real refusal sites.
+- **The bridge had no frame-size or client cap** on an unauthenticated socket —
+  `ws` defaults to 100 MiB per frame. Now 16 MiB and 64 clients.
+- **The Codex TOML editor matched its block header anywhere in the file**,
+  including inside a comment or a string. The match is now anchored to a line.
+- **`layer`'s `batch` was the least-typed path in the surface** while being the
+  documented way to build a rig: `z.record(z.unknown())` accepted an opacity of
+  `"hello"` and Lua assigned it. It is now the same typed object as the
+  single-op form.
+- **The Lua reconnect state machine had no per-socket identity check**, so an
+  event from a superseded socket could clobber the new connection's state. The
+  TypeScript side already guarded the mirror-image race.
+- **A rejected `close()`/`stop()` left a floating promise rejection** in the
+  CLI's shutdown paths.
+- **Four output schemas under-documented what Lua actually returns** —
+  `palette` op `load`'s `path`, `sprite_manage` op `list`'s colour mode and
+  counts, and the layer entries' `editable`/`isTilemap`/`cels`.
+- **Lua test cleanup was not exception-safe.** One failing assertion left the
+  active document pointing at a closed scratch sprite and cascaded into every
+  later check — the failure this project already hit once. All sixteen scratch
+  blocks now go through a helper that always closes and always restores.
+- **The cross-language CIELAB claim was not actually enforced.** ADR-0001 and
+  ARCHITECTURE.md both said the two ports are held to the same expectations;
+  only the TypeScript side had numeric fixtures. The Lua side now pins the same
+  white/black L\*, ΔE bounds, grey-snaps-to-grey case and hue-shift direction.
+- **`export` op `frames` had no coverage at any level.** Verified it does write
+  one file per frame (numbered from 0, now documented) and locked that in.
+- **The e2e test used the real default ports**, so running it on a machine with
+  a live Aseprite session could steal that session — the bridge accepts the last
+  plugin to connect. Ports are now overridable, the risk is documented, and the
+  test removes the files it writes.
+- **`SECURITY.md` overstated the `allowLua` gate.** It gates the tool surface
+  your agent sees, not the capability: the extension implements `lua.run`
+  whenever installed and the bridge has no authentication. Now stated plainly,
+  alongside the filesystem reach of every `path` argument.
+
 ### Added
 
 - `SECURITY.md` — threat model, the localhost bridge's real exposure, what

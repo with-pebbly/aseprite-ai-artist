@@ -35,6 +35,8 @@ local connected = false
 local connecting = false
 local connecting_ticks = 0
 local reconnect_timer = nil
+-- Bumped on every connect attempt; events carrying an older value are stale.
+local ws_generation = 0
 -- Assigned near the bottom, once encode_json exists; see "Load marker".
 local status_writer = nil
 
@@ -3121,7 +3123,22 @@ local function send_hello()
   })
 end
 
-local function on_message(messageType, data)
+local handle_socket_event
+
+--- Events arrive on a closure bound at connect() time, so a socket that has
+--- already been replaced can still deliver one. `generation` is the identity
+--- check: an event from an older generation is stale and must not touch state.
+local function on_message_for(generation)
+  return function(messageType, data)
+    if generation ~= ws_generation then
+      log("ignoring event from superseded socket (gen " .. tostring(generation) .. ")")
+      return
+    end
+    return handle_socket_event(messageType, data)
+  end
+end
+
+handle_socket_event = function(messageType, data)
   if messageType == WebSocketMessageType.OPEN then
     connected = true
     connecting = false
@@ -3167,11 +3184,13 @@ local function connect()
   if connected or connecting then return end
   connecting = true
   connecting_ticks = 0
+  ws_generation = ws_generation + 1
+  local generation = ws_generation
 
   local ok, err = pcall(function()
     ws = WebSocket{
       url = "ws://" .. CONFIG.host .. ":" .. CONFIG.port,
-      onreceive = on_message,
+      onreceive = on_message_for(generation),
       deflate = false,
     }
     ws:connect()
@@ -3259,4 +3278,14 @@ _G.AI_ARTIST = {
   handleCommand = handle_command,
   toPlain = to_plain,
   blob47Masks = blob47_masks,
+  -- Exposed so tests/extension.test.lua can pin the SAME numbers as
+  -- tests/color.test.ts. The two CIELAB ports must not drift apart: a palette
+  -- snap that disagrees between the report and the pixels is worse than either
+  -- being wrong alone.
+  rgbToLab = rgb_to_lab,
+  deltaE = delta_e,
+  hexToColor = hex_to_color,
+  colorToHex = color_to_hex,
+  snapColorToPalette = snap_color_to_palette,
+  shadeColor = shade_color,
 }

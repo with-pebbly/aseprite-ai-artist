@@ -105,9 +105,14 @@ no authentication because there is no remote surface to authenticate.
 | Pixel loops | Lua | Sending a 64×64 image over the wire per op would not scale |
 
 The colour maths is deliberately duplicated (`src/lib/color.ts` and the CIELAB
-block in `extension/ai-artist.lua`). Both are covered by tests that pin the same
-expectations, because a palette snap that disagrees between the report and the
-pixels is worse than either being wrong alone.
+block in `extension/ai-artist.lua`), because a palette snap that disagrees
+between the report and the pixels is worse than either being wrong alone. Both
+sides are pinned to the same numeric fixtures — `tests/color.test.ts` and the
+"Lua CIELAB agrees with the TypeScript port" check in `tests/extension.test.lua`
+assert the same white/black L\*, the same ΔE bounds, the same grey-snaps-to-grey
+case and the same hue-shift direction. The Lua half runs only under
+`npm run test:extension`, not in CI (CI has no Aseprite), so a drift is caught
+locally rather than on a pull request.
 
 ## Known limits
 

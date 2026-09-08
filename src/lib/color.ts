@@ -80,10 +80,14 @@ export interface SnapResult {
 
 /**
  * Nearest palette entry to `colour`, by ΔE.
- * Fully transparent inputs snap to themselves — a palette has no "nothing".
+ *
+ * A fully transparent input snaps to itself: a palette has no entry for
+ * "nothing", and picking the nearest opaque colour for it would paint over
+ * holes the artist left on purpose.
  */
 export function snapToPalette(colour: Rgb, palette: readonly string[]): SnapResult {
   if (palette.length === 0) throw new Error("Palette is empty.");
+  if (colour.a === 0) return { index: -1, hex: toHex(colour, true), distance: 0 };
   const target = rgbToLab(colour);
   let best = 0;
   let bestDistance = Number.POSITIVE_INFINITY;

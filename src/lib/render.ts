@@ -1,3 +1,5 @@
+import { LiveError } from "./protocol.js";
+
 /**
  * Turning pixels into something a language model can actually read.
  *
@@ -44,9 +46,11 @@ export function renderAscii(region: PixelRegion, opts: AsciiOptions = {}): Ascii
   const maxCells = opts.maxCells ?? 4096; // 64×64
   const cells = region.width * region.height;
   if (cells > maxCells) {
-    throw new Error(
+    throw new LiveError(
+      "too_large",
       `Region is ${region.width}×${region.height} (${cells} cells) which exceeds the ${maxCells}-cell text-grid limit. ` +
         `Pass a smaller region, or use the preview tool for a whole-sprite look.`,
+      { cells, maxCells },
     );
   }
 
@@ -56,10 +60,12 @@ export function renderAscii(region: PixelRegion, opts: AsciiOptions = {}): Ascii
 
   const distinct = region.colors.length - 1;
   if (distinct > GLYPHS.length) {
-    throw new Error(
+    throw new LiveError(
+      "too_large",
       `Region has ${distinct} distinct colours but the text grid only has ${GLYPHS.length} glyphs. ` +
         `Past that, different colours would share a glyph and the grid would lie about what is where. ` +
         `Read a smaller region, or use the preview op instead.`,
+      { distinctColors: distinct, maxColors: GLYPHS.length },
     );
   }
 
@@ -122,7 +128,8 @@ export interface DiffView {
  */
 export function renderDiff(before: PixelRegion, after: PixelRegion): DiffView {
   if (before.width !== after.width || before.height !== after.height) {
-    throw new Error(
+    throw new LiveError(
+      "invalid_args",
       `Cannot diff regions of different sizes (${before.width}×${before.height} vs ${after.width}×${after.height}).`,
     );
   }
@@ -154,9 +161,11 @@ export function renderDiff(before: PixelRegion, after: PixelRegion): DiffView {
       let glyph = glyphForColor.get(afterColor);
       if (!glyph) {
         if (next >= GLYPHS.length) {
-          throw new Error(
+          throw new LiveError(
+            "too_large",
             `More than ${GLYPHS.length} distinct colours appear in this diff, so glyphs would start ` +
               `colliding and the grid would misreport which colour landed where. Diff a smaller region.`,
+            { maxColors: GLYPHS.length },
           );
         }
         glyph = GLYPHS[next++]!;

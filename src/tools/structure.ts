@@ -10,6 +10,32 @@ import { fail, ok, targetShape } from "./kit.js";
  * arrive in clusters: building a character rig is eight layers, and blocking in
  * a walk cycle is eight frames with three different durations.
  */
+const blendMode = z.enum([
+  "normal", "multiply", "screen", "overlay", "darken", "lighten",
+  "color_dodge", "color_burn", "hard_light", "soft_light", "difference",
+  "exclusion", "hue", "saturation", "color", "luminosity", "addition",
+  "subtract", "divide",
+]);
+
+const layerOpName = z.enum([
+  "list", "create", "rename", "delete", "reorder", "set",
+  "group", "ungroup", "merge", "duplicate", "activate",
+]);
+
+/** One layer operation. Used for both the single-op form and every `batch` entry. */
+const layerOp = z.object({
+  op: layerOpName,
+  name: z.string().optional(),
+  newName: z.string().optional(),
+  parent: z.string().optional().describe("Group layer to nest under."),
+  index: z.number().int().optional().describe("Target stack position; 0 is bottom."),
+  visible: z.boolean().optional(),
+  editable: z.boolean().optional(),
+  opacity: z.number().int().min(0).max(255).optional(),
+  blendMode: blendMode.optional(),
+  names: z.array(z.string()).optional().describe("For 'merge' and bulk 'group'."),
+});
+
 export function registerStructureTools(server: McpServer, live: LiveClient): void {
   server.registerTool(
     "layer",
@@ -20,22 +46,7 @@ export function registerStructureTools(server: McpServer, live: LiveClient): voi
         "Pass `batch` to run several in one undoable action — building a rig in one call is the normal use. " +
         "A character that will be animated wants its parts on separate layers (head, torso, arm-far, arm-near, leg-far, leg-near) before any frames exist; splitting baked pixels apart later is far more work.",
       inputSchema: {
-        op: z
-          .enum([
-            "list",
-            "create",
-            "rename",
-            "delete",
-            "reorder",
-            "set",
-            "group",
-            "ungroup",
-            "merge",
-            "duplicate",
-            "activate",
-          ])
-          .optional()
-          .describe("Single operation. Use `batch` instead for several."),
+        op: layerOpName.optional().describe("Single operation. Use `batch` instead for several."),
         sprite: targetShape.sprite,
         name: z.string().optional(),
         newName: z.string().optional(),
@@ -44,19 +55,13 @@ export function registerStructureTools(server: McpServer, live: LiveClient): voi
         visible: z.boolean().optional(),
         editable: z.boolean().optional(),
         opacity: z.number().int().min(0).max(255).optional(),
-        blendMode: z
-          .enum([
-            "normal", "multiply", "screen", "overlay", "darken", "lighten",
-            "color_dodge", "color_burn", "hard_light", "soft_light", "difference",
-            "exclusion", "hue", "saturation", "color", "luminosity", "addition",
-            "subtract", "divide",
-          ])
-          .optional(),
+        blendMode: blendMode.optional(),
         names: z.array(z.string()).optional().describe("For 'merge' and bulk 'group'."),
         batch: z
-          .array(z.record(z.unknown()))
+          .array(layerOp)
+          .max(128)
           .optional()
-          .describe("Array of operation objects, each shaped like the single-op arguments. Applied in order."),
+          .describe("Operations applied in order, in one undoable action. Same shape as the single-op arguments."),
       },
       outputSchema: {
         sprite: z.string(),
@@ -66,10 +71,13 @@ export function registerStructureTools(server: McpServer, live: LiveClient): voi
               name: z.string(),
               index: z.number().int(),
               visible: z.boolean(),
+              editable: z.boolean(),
               opacity: z.number().int(),
               blendMode: z.string(),
               isGroup: z.boolean(),
+              isTilemap: z.boolean(),
               parent: z.string().nullish(),
+              cels: z.array(z.number().int()).describe("1-based frames that have a cel on this layer."),
             }),
           )
           .optional(),
