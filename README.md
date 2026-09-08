@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/media/harbour.gif" alt="A pixel-art harbour at night: a lighthouse beam sweeps over the water, windows flicker in the town, smoke drifts from a chimney" width="768">
+
 # Aseprite AI Artist
 
 **Let a coding agent draw pixel art in your open Aseprite window** — not in a
@@ -8,6 +10,11 @@ copy, not on disk, in the document you are looking at.
 [![npm](https://img.shields.io/npm/v/@pebbly/aseprite-ai-artist?color=%23e07a3f&label=npm)](https://www.npmjs.com/package/@pebbly/aseprite-ai-artist)
 [![CI](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml/badge.svg)](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml)
 [![licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
+
+*256×144, 28 frames, ten layers, one palette — drawn by Codex through this
+server in a live Aseprite window. The scene is painted once; only the beam, the
+windows, the water, the smoke, the boat and the stars move, each on its own
+cycle length.*
 
 </div>
 
