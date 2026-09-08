@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/media/mascot.png" alt="The Aseprite AI Artist mascot" width="192">
-
 # Aseprite AI Artist
 
 **Let a coding agent draw pixel art in your open Aseprite window** — not in a
@@ -10,15 +8,6 @@ copy, not on disk, in the document you are looking at.
 [![npm](https://img.shields.io/npm/v/@pebbly/aseprite-ai-artist?color=%23e07a3f&label=npm)](https://www.npmjs.com/package/@pebbly/aseprite-ai-artist)
 [![CI](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml/badge.svg)](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml)
 [![licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
-
-<img src="docs/media/walk.gif" alt="Walk cycle" width="128">
-&nbsp;&nbsp;
-<img src="docs/media/idle.gif" alt="Idle animation" width="128">
-&nbsp;&nbsp;
-<img src="docs/media/paint.gif" alt="Painting animation" width="128">
-
-*Every frame above was drawn by an agent through this server, in a live Aseprite
-window, following the rulebook it ships with.*
 
 </div>
 
@@ -121,9 +110,8 @@ that surprises people:
   32×32 grid is a spatial problem: the model has to hold a coordinate frame in
   its head, keep a silhouette readable at that size, and notice when a shape has
   gone wrong. Turn reasoning up before you blame the tool.
-- **Codex CLI on a high-reasoning setting is the best drawer we have used** — it
-  drew everything at the top of this page, working only from the brief and the
-  rulebook.
+- **Codex CLI on a high-reasoning setting is the best drawer we have used**,
+  working from a brief and the rulebook alone.
 - **Claude Code is the better planner and critic.** Palette construction, rig
   layout, animation timing and the review pass come out noticeably stronger;
   raw pixel placement at small canvas sizes is weaker.
