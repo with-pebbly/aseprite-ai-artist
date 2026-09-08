@@ -160,6 +160,18 @@ node dist/cli.js install --all
 node dist/cli.js install-extension
 ```
 
+Use `node dist/cli.js`, not `npx @pebbly/aseprite-ai-artist`, and only inside
+this checkout. npm sees that the current project *is* that package, so it skips
+fetching it and looks for the binary in `node_modules/.bin` — where a package's
+own bin is never linked. You get:
+
+```
+sh: aseprite-ai-artist: command not found
+```
+
+which reads like a broken package and is only ever a wrong working directory.
+The `npx` form is correct everywhere else.
+
 ## Uninstall
 
 Delete the `aseprite-ai-artist` directory from Aseprite's `extensions` folder,
