@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/media/mascot.png" alt="The Aseprite AI Artist mascot" width="176">
+
 # Aseprite AI Artist
 
 **Let a coding agent draw pixel art in your open Aseprite window** — not in a
