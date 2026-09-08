@@ -4,6 +4,34 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is
 [semver](https://semver.org/).
 
+## [0.1.4] — 2026-09-08
+
+### Fixed
+
+- **GIF export waited for a click nobody was there to give.** Aseprite warns
+  once per session that GIF cannot hold everything a sprite can, and no save API
+  declines it. From outside it did not look like a prompt at all: a modal pumps
+  events while it waits, so every other command kept answering and only the
+  export appeared to hang. It is now suppressed for the duration of the export
+  and handed straight back, so File ▸ Save As keeps whatever the user chose.
+- 0.1.3 tried to fix this with `SaveFileCopyAs{ui = false}`. That flag does not
+  govern this dialog. GIF export now converts a throwaway copy to indexed
+  instead of leaving the conversion to a prompt — and on a copy, because doing
+  it in place would silently change the colour mode of the document being
+  worked in.
+
+### Added
+
+- `export` op `gif` honours `scale`. A browser scaling a 128px GIF up smooths
+  it, and smoothed pixel art is ruined pixel art; exporting big keeps the pixels
+  square wherever the file is shown.
+
+### Known
+
+- The first GIF export in an Aseprite session costs 20-30 seconds — measured
+  20.6s, then 435ms for the identical export straight after. Something warms up
+  once. The 120s export budget from 0.1.3 covers it.
+
 ## [0.1.3] — 2026-09-08
 
 ### Fixed

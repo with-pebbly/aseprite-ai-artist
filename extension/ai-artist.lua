@@ -15,7 +15,7 @@
 --------------------------------------------------------------------------------
 
 local PROTOCOL_VERSION = 1
-local EXTENSION_VERSION = "0.1.3"
+local EXTENSION_VERSION = "0.1.4"
 
 -- Optional capabilities. The wire version stays 1 across builds; new command
 -- families are gated on these flags plus the loud unsupported_command reply,
@@ -2210,17 +2210,66 @@ H["export.run"] = function(args)
       out:close()
       files[#files + 1] = path
 
-    elseif op == "gif" or op == "aseprite" then
-      -- NOT Sprite:saveCopyAs. Writing an RGB sprite to GIF needs a colour
-      -- quantisation the UI asks about, and that dialog has no `ui` switch to
-      -- turn off from the sprite method — the call simply never returns. It
-      -- looks like a hang rather than a prompt, because the dialog pumps events
-      -- while it waits, so every other command keeps answering normally.
-      -- Headless tests never see it: `aseprite -b` has no dialogs at all.
-      preserving_site(function()
-        app.sprite = s
-        app.command.SaveFileCopyAs{ ui = false, filename = path }
+    elseif op == "aseprite" then
+      s:saveCopyAs(path)
+      files[#files + 1] = path
+
+    elseif op == "gif" then
+      -- GIF holds 256 indexed colours, so writing an RGB sprite to one needs a
+      -- quantisation — and Aseprite asks a human how to do it. Neither
+      -- Sprite:saveCopyAs nor SaveFileCopyAs{ui = false} declines that dialog;
+      -- the export simply waits, forever if nobody is watching the screen. It
+      -- does not even look like a prompt from the outside: a modal dialog pumps
+      -- events while it waits, so every other command keeps answering normally
+      -- and only the export appears stuck.
+      --
+      -- So do the conversion here, on a throwaway copy, and hand Aseprite a
+      -- sprite it has nothing left to ask about. The copy keeps the sprite's
+      -- own palette, which is the point of a palette-first tool: the colours
+      -- that come back are the colours the artist chose.
+      --
+      -- Headless tests cannot catch a regression here — `aseprite -b` has no
+      -- dialogs at all, so the broken version passed them.
+      -- `scale` matters more here than for a still: a browser scaling a 128px
+      -- GIF up smooths it, and smoothed pixel art is ruined pixel art. Exporting
+      -- big means the pixels stay square wherever the file is shown.
+      local scale = args.scale or 1
+
+      -- Aseprite warns, once per session, that GIF cannot hold everything a
+      -- sprite can — and waits for a click. Nothing in the save API declines
+      -- it, and from the outside it does not even look like a prompt: a modal
+      -- pumps events while it waits, so every other command keeps answering and
+      -- only the export appears to hang, forever, on a machine nobody is
+      -- watching. Silence it for the duration and hand it back, so the user's
+      -- own File > Save As keeps whatever they chose.
+      local restore_alert = nil
+      pcall(function()
+        restore_alert = app.preferences.gif.show_alert
+        app.preferences.gif.show_alert = false
       end)
+
+      local ok, err = pcall(function()
+        if s.colorMode == ColorMode.INDEXED and scale == 1 then
+          s:saveCopyAs(path)
+        else
+          preserving_site(function()
+            local copy = Sprite(s)
+            app.sprite = copy
+            if scale > 1 then copy:resize(s.width * scale, s.height * scale) end
+            if copy.colorMode ~= ColorMode.INDEXED then
+              app.command.ChangePixelFormat{ ui = false, format = "indexed" }
+            end
+            copy:saveCopyAs(path)
+            copy:close()
+          end)
+        end
+      end)
+
+      if restore_alert ~= nil then
+        pcall(function() app.preferences.gif.show_alert = restore_alert end)
+      end
+      if not ok then error(err, 0) end
+
       files[#files + 1] = path
 
     elseif op == "frames" then

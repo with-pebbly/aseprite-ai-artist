@@ -1135,6 +1135,30 @@ check("a nil field is absent from the payload, not null", function()
   assert(site.openSprites ~= nil, "session.site must always report openSprites")
 end)
 
+check("exporting a gif leaves the source sprite untouched", function()
+  -- GIF export converts to indexed to avoid Aseprite's quantisation dialog.
+  -- That conversion must happen on a throwaway copy: doing it in place would
+  -- silently change the colour mode of the document the user is working in,
+  -- and every RGB colour they had would be gone on the next stroke.
+  local out = app.fs.joinPath(app.fs.tempPath, "ai-artist-test-gifmode.gif")
+  withMockSprite(8, 8, ColorMode.RGB, function(mock)
+    call("draw.batch", {
+      paletteLock = false,
+      ops = { { kind = "rect", rect = { x = 1, y = 1, width = 4, height = 4 }, fill = "#ff004d" } },
+    })
+    call("frame.apply", { op = "add", count = 1 })
+
+    local open_before = #app.sprites
+    call("export.run", { op = "gif", path = out })
+
+    assert(app.fs.isFile(out), "gif was not written")
+    assert(mock.colorMode == ColorMode.RGB, "the source sprite was converted in place")
+    assertEq(#app.sprites, open_before, "the throwaway copy was left open")
+    assert(app.sprite == mock, "the active sprite was not restored")
+  end)
+  os.remove(out)
+end)
+
 sprite:close()
 
 print("")
