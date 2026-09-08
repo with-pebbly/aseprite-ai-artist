@@ -22,6 +22,7 @@ import {
 import { installExtension, findAsepriteConfigDir } from "./extension.js";
 import { DEFAULT_CONTROL_PORT, DEFAULT_PLUGIN_PORT } from "./lib/protocol.js";
 import { packageVersion } from "./lib/version.js";
+import { linkLines } from "./lib/report.js";
 
 interface Flags {
   [key: string]: string | boolean;
@@ -252,21 +253,16 @@ async function doctor(opts: { pluginPort: number; controlPort: number }): Promis
   });
 
   const bridgeUp = await live.waitForBridge(4_000);
-  lines.push(
-    !bridgeUp
-      ? `✗ Bridge                 could not reach or start it on :${opts.controlPort}`
-      : wasAlreadyRunning
-        ? `✓ Bridge                 ws://127.0.0.1:${opts.controlPort}`
-        : `· Bridge                 not running — started one to test, stopping it again below`,
-  );
-
   const pluginUp = bridgeUp ? await live.waitForPlugin(4_000) : false;
   lines.push(
-    pluginUp
-      ? `✓ Aseprite extension     ${live.hello?.extensionVersion ?? "?"} on Aseprite ${live.hello?.asepriteVersion ?? "?"}`
-      : bridgeUp
-        ? "✗ Aseprite extension     not connected — open Aseprite, or run `install-extension` and restart it"
-        : "· Aseprite extension     unknown — cannot be checked without a bridge",
+    ...linkLines({
+      bridgeUp,
+      wasAlreadyRunning,
+      pluginUp,
+      controlPort: opts.controlPort,
+      extensionVersion: live.hello?.extensionVersion,
+      asepriteVersion: live.hello?.asepriteVersion,
+    }),
   );
 
   if (pluginUp) {

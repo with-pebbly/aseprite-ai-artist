@@ -31,6 +31,25 @@ if rawget(_G, "Color") == nil then
   end
 end
 
+-- Two enum tables are built at load, so the names must exist before the file is
+-- read. Only distinctness matters here: nothing below maps a blend mode or an
+-- animation direction, and inside Aseprite the real enums are used instead.
+if rawget(_G, "BlendMode") == nil then
+  local names = {
+    "NORMAL", "MULTIPLY", "SCREEN", "OVERLAY", "DARKEN", "LIGHTEN",
+    "COLOR_DODGE", "COLOR_BURN", "HARD_LIGHT", "SOFT_LIGHT",
+    "DIFFERENCE", "EXCLUSION", "HSL_HUE", "HSL_SATURATION",
+    "HSL_COLOR", "HSL_LUMINOSITY", "ADDITION", "SUBTRACT", "DIVIDE",
+  }
+  local stub = {}
+  for i, name in ipairs(names) do stub[name] = i end
+  _G.BlendMode = stub
+end
+
+if rawget(_G, "AniDir") == nil then
+  _G.AniDir = { FORWARD = 0, REVERSE = 1, PING_PONG = 2, PING_PONG_REVERSE = 3 }
+end
+
 local root = (rawget(_G, "app") and app.params and app.params["root"])
   or os.getenv("AI_ARTIST_ROOT")
   or "."

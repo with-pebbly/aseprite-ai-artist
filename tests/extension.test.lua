@@ -821,6 +821,303 @@ check("look.filmstrip composites every frame", function()
   assert(app.fs.isFile(out), "filmstrip file was not written")
 end)
 
+--------------------------------------------------------------------------------
+-- Palette commands
+--
+-- Nothing below was covered before: the palette handlers are the ones an agent
+-- reaches for first on a style-matching task, and a wrong palette silently
+-- ruins every pixel drawn afterwards.
+--------------------------------------------------------------------------------
+
+check("palette.get reports the sprite's colours", function()
+  local pal = call("palette.get")
+  assertEq(pal.size, 4, "palette size")
+  assertEq(pal.colors[2], "#ff004d", "second entry")
+end)
+
+check("palette.set replaces the whole palette", function()
+  withMockSprite(8, 8, ColorMode.RGB, function()
+    call("palette.set", { colors = { "#000000", "#ffffff" }, replace = true })
+    local pal = call("palette.get")
+    assertEq(pal.size, 2, "size after replace")
+    assertEq(pal.colors[1], "#000000", "first entry")
+    assertEq(pal.colors[2], "#ffffff", "second entry")
+  end)
+end)
+
+check("palette.set append leaves earlier entries alone", function()
+  withMockSprite(8, 8, ColorMode.RGB, function()
+    call("palette.set", { colors = { "#111111", "#222222" }, replace = true })
+    call("palette.set", { colors = { "#333333" }, append = true })
+    local pal = call("palette.get")
+    assertEq(pal.size, 3, "size after append")
+    assertEq(pal.colors[1], "#111111", "first entry survived")
+    assertEq(pal.colors[3], "#333333", "appended entry")
+  end)
+end)
+
+check("palette.stats counts usage and names off-palette colours", function()
+  withMockSprite(8, 8, ColorMode.RGB, function()
+    call("palette.set", { colors = { "#ff004d" }, replace = true })
+    call("draw.batch", {
+      paletteLock = false,
+      ops = {
+        { kind = "rect", rect = { x = 0, y = 0, width = 4, height = 4 }, fill = "#ff004d" },
+        { kind = "rect", rect = { x = 5, y = 5, width = 2, height = 2 }, fill = "#00ff00" },
+      },
+    })
+    local stats = call("palette.stats")
+
+    local used = nil
+    for _, entry in ipairs(stats.usage) do
+      if entry.hex:sub(1, 7) == "#ff004d" then used = entry.pixels end
+    end
+    assert(used ~= nil and used > 0, "palette colour reported as unused")
+
+    local found_off = false
+    for _, entry in ipairs(stats.offPalette or {}) do
+      if entry.hex:sub(1, 7) == "#00ff00" then found_off = true end
+    end
+    assert(found_off, "off-palette colour was not reported")
+  end)
+end)
+
+check("palette.load reads a palette file from disk", function()
+  local path = app.fs.joinPath(app.fs.tempPath, "ai-artist-test-palette.gpl")
+  local handle = assert(io.open(path, "w"), "could not write the test palette")
+  handle:write("GIMP Palette\nName: ai-artist-test\n#\n0 0 0\t black\n255 0 77\t red\n")
+  handle:close()
+
+  withMockSprite(8, 8, ColorMode.RGB, function()
+    local loaded = call("palette.load", { path = path })
+    assert(loaded.size >= 2, "expected at least the two colours in the file")
+    assertEq(loaded.colors[2], "#ff004d", "second colour from the file")
+  end)
+  os.remove(path)
+end)
+
+--------------------------------------------------------------------------------
+-- Reference images
+--------------------------------------------------------------------------------
+
+check("reference.apply imports, lists, samples and removes", function()
+  -- A real file on disk, because that is the only input this command takes.
+  local ref_path = app.fs.joinPath(app.fs.tempPath, "ai-artist-test-reference.png")
+  withMockSprite(6, 6, ColorMode.RGB, function()
+    call("draw.batch", {
+      paletteLock = false,
+      ops = { { kind = "rect", rect = { x = 0, y = 0, width = 6, height = 6 }, fill = "#29adff" } },
+    })
+    call("export.run", { op = "png", path = ref_path })
+  end)
+  assert(app.fs.isFile(ref_path), "the reference fixture was not written")
+
+  withMockSprite(6, 6, ColorMode.RGB, function(mock)
+    assertEq(#call("reference.apply", { op = "list" }).references, 0, "reference count before import")
+
+    call("reference.apply", { op = "import", path = ref_path })
+    -- Regression: app.open made the reference active and closing it left NO
+    -- active sprite, which broke every transaction that followed and switched
+    -- the user's tab out from under them.
+    assert(app.sprite == mock, "importing a reference stole the active sprite")
+    local listed = call("reference.apply", { op = "list" }).references
+    assertEq(#listed, 1, "reference count after import")
+
+    local sampled = call("reference.apply", { op = "sample_palette", path = ref_path })
+    assert(sampled.palette and #sampled.palette > 0, "sampling returned no colours")
+    assert(sampled.palette[1].hex:match("^#%x%x%x%x%x%x$"), "sampled colour is not a hex string")
+
+    call("reference.apply", { op = "remove", name = listed[1] })
+    assertEq(#call("reference.apply", { op = "list" }).references, 0, "reference survived removal")
+  end)
+  os.remove(ref_path)
+end)
+
+--------------------------------------------------------------------------------
+-- Transform ops that had no coverage
+--------------------------------------------------------------------------------
+
+check("transform crop_to_content shrinks the canvas to the art", function()
+  withMockSprite(16, 16, ColorMode.RGB, function(mock)
+    call("draw.batch", {
+      paletteLock = false,
+      ops = { { kind = "rect", rect = { x = 4, y = 4, width = 4, height = 4 }, fill = "#ff004d" } },
+    })
+    call("transform.apply", { op = "crop_to_content" })
+    assert(mock.width < 16 or mock.height < 16, "canvas was not cropped")
+  end)
+end)
+
+check("transform translate moves the art", function()
+  withMockSprite(16, 16, ColorMode.RGB, function()
+    call("draw.batch", {
+      paletteLock = false,
+      ops = { { kind = "rect", rect = { x = 0, y = 0, width = 2, height = 2 }, fill = "#ff004d" } },
+    })
+    call("transform.apply", { op = "translate", dx = 4, dy = 4 })
+    local region = call("pixels.read", { region = { x = 0, y = 0, width = 16, height = 16 } })
+    local moved = region.grid[4 * 16 + 4 + 1]
+    assert(moved ~= 0, "nothing at the destination after translate")
+  end)
+end)
+
+check("transform scale enlarges the cel image, leaving the canvas alone", function()
+  withMockSprite(16, 16, ColorMode.RGB, function(mock)
+    call("draw.batch", {
+      paletteLock = false,
+      ops = { { kind = "rect", rect = { x = 0, y = 0, width = 4, height = 4 }, fill = "#ff004d" } },
+    })
+    local before = mock.cels[1].image.width
+    call("transform.apply", { op = "scale", factor = 2 })
+    assertEq(mock.cels[1].image.width, before * 2, "cel image width after 2x scale")
+    assertEq(mock.width, 16, "canvas must not change")
+  end)
+end)
+
+check("transform outline draws a border around the art", function()
+  withMockSprite(16, 16, ColorMode.RGB, function()
+    call("draw.batch", {
+      paletteLock = false,
+      ops = { { kind = "rect", rect = { x = 5, y = 5, width = 4, height = 4 }, fill = "#ff004d" } },
+    })
+    local before = call("pixels.read", { region = { x = 0, y = 0, width = 16, height = 16 } })
+    local before_set = 0
+    for _, v in ipairs(before.grid) do if v ~= 0 then before_set = before_set + 1 end end
+
+    call("transform.apply", { op = "outline", color = "#000000" })
+
+    local after = call("pixels.read", { region = { x = 0, y = 0, width = 16, height = 16 } })
+    local after_set = 0
+    for _, v in ipairs(after.grid) do if v ~= 0 then after_set = after_set + 1 end end
+    assert(after_set > before_set, "outline added no pixels")
+  end)
+end)
+
+--------------------------------------------------------------------------------
+-- Selection ops that had no coverage
+--------------------------------------------------------------------------------
+
+check("select all covers the canvas and invert empties it", function()
+  withMockSprite(10, 10, ColorMode.RGB, function(mock)
+    call("select.apply", { op = "all" })
+    assertEq(mock.selection.bounds.width, 10, "width selected by 'all'")
+
+    call("select.apply", { op = "invert" })
+    assert(mock.selection.isEmpty or mock.selection.bounds.width == 0,
+      "inverting a full selection should leave nothing")
+  end)
+end)
+
+check("select ellipse stays inside its bounding box", function()
+  withMockSprite(12, 12, ColorMode.RGB, function(mock)
+    call("select.apply", { op = "ellipse", rect = { x = 2, y = 2, width = 8, height = 8 } })
+    local b = mock.selection.bounds
+    assert(not mock.selection.isEmpty, "ellipse selected nothing")
+    assert(b.x >= 2 and b.y >= 2 and b.width <= 8 and b.height <= 8,
+      "ellipse escaped its bounding box")
+    -- A corner of the box must be outside an inscribed ellipse.
+    assert(not mock.selection:contains(2, 2), "corner of the box was selected")
+  end)
+end)
+
+check("select color picks up exactly the painted pixels", function()
+  withMockSprite(10, 10, ColorMode.RGB, function(mock)
+    call("draw.batch", {
+      paletteLock = false,
+      ops = { { kind = "rect", rect = { x = 3, y = 3, width = 4, height = 4 }, fill = "#ff004d" } },
+    })
+    call("select.apply", { op = "color", color = "#ff004d" })
+    assert(not mock.selection.isEmpty, "colour selection was empty")
+    assert(mock.selection:contains(4, 4), "a painted pixel was not selected")
+    assert(not mock.selection:contains(0, 0), "an unpainted pixel was selected")
+  end)
+end)
+
+check("select grow and shrink change the selected area", function()
+  withMockSprite(16, 16, ColorMode.RGB, function(mock)
+    call("select.apply", { op = "rect", rect = { x = 6, y = 6, width = 4, height = 4 } })
+    local base = mock.selection.bounds.width
+
+    call("select.apply", { op = "grow", pixels = 2 })
+    local grown = mock.selection.bounds.width
+    assert(grown > base, "grow did not expand the selection (" .. base .. " -> " .. grown .. ")")
+
+    call("select.apply", { op = "shrink", pixels = 2 })
+    local shrunk = mock.selection.bounds.width
+    assert(shrunk < grown, "shrink did not contract the selection")
+  end)
+end)
+
+--------------------------------------------------------------------------------
+-- Sprite management ops that had no coverage
+--------------------------------------------------------------------------------
+
+check("sprite.manage resize_canvas changes the canvas, not the art", function()
+  withMockSprite(8, 8, ColorMode.RGB, function(mock)
+    call("sprite.manage", { op = "resize_canvas", width = 16, height = 12 })
+    assertEq(mock.width, 16, "width after resize_canvas")
+    assertEq(mock.height, 12, "height after resize_canvas")
+  end)
+end)
+
+check("sprite.manage set_properties changes colour mode and pixel ratio", function()
+  withMockSprite(8, 8, ColorMode.RGB, function(mock)
+    call("sprite.manage", { op = "set_properties", pixelAspect = "2:1" })
+    assertEq(mock.pixelRatio.width, 2, "pixel ratio width")
+
+    call("sprite.manage", { op = "set_properties", colorMode = "indexed" })
+    assert(mock.colorMode == ColorMode.INDEXED, "colour mode was not changed")
+  end)
+end)
+
+--------------------------------------------------------------------------------
+-- Export formats that had no coverage
+--------------------------------------------------------------------------------
+
+check("export writes png, gif and a spritesheet with its atlas", function()
+  local base = app.fs.joinPath(app.fs.tempPath, "ai-artist-test-export")
+  local png, gif, sheet = base .. ".png", base .. ".gif", base .. "-sheet.png"
+  local atlas = base .. "-sheet.json"
+
+  withMockSprite(8, 8, ColorMode.RGB, function()
+    call("draw.batch", {
+      paletteLock = false,
+      ops = { { kind = "rect", rect = { x = 1, y = 1, width = 4, height = 4 }, fill = "#ff004d" } },
+    })
+    call("frame.apply", { op = "add", count = 2 })
+
+    call("export.run", { op = "png", path = png })
+    assert(app.fs.isFile(png), "png was not written")
+
+    call("export.run", { op = "gif", path = gif })
+    assert(app.fs.isFile(gif), "gif was not written")
+
+    local sheeted = call("export.run", { op = "spritesheet", path = sheet })
+    assert(app.fs.isFile(sheet), "spritesheet image was not written")
+    assert(sheeted.atlas ~= nil, "spritesheet reported no atlas file")
+    assert(app.fs.isFile(atlas), "spritesheet json was not written next to it")
+  end)
+
+  for _, f in ipairs({ png, gif, sheet, atlas }) do os.remove(f) end
+end)
+
+check("a failure inside a transaction reports a readable message", function()
+  -- Regression: transact() used to retry the failing closure and report the
+  -- second attempt's error. Aseprite can raise values that are not strings, so
+  -- the agent received "function: 0x..." and could not act on it — and the
+  -- mutating closure had been run twice.
+  local reply = A.handleCommand({
+    id = "t",
+    cmd = "palette.load",
+    args = { path = app.fs.joinPath(app.fs.tempPath, "ai-artist-does-not-exist.gpl") },
+  })
+  assert(reply.ok == false, "loading a missing palette reported success")
+  assertEq(type(reply.error.message), "string", "error message type")
+  assert(not reply.error.message:match("^function:"),
+    "error message is a raw Lua value: " .. reply.error.message)
+  assert(#reply.error.message > 10, "error message is too short to act on")
+end)
+
 sprite:close()
 
 print("")

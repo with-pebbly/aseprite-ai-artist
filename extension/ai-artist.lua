@@ -267,11 +267,30 @@ end
 
 -- app.transaction gained a name argument in 1.3; fall back for older builds so
 -- the extension still works, just with a less descriptive undo entry.
+-- Older Aseprite builds take only `app.transaction(fn)`; 1.3 added the named
+-- form. Which one exists is a property of the build, so probe it once.
+--
+-- This used to retry the named call with the unnamed one whenever it failed,
+-- which is wrong twice over: the closure mutates, so a failure partway through
+-- was replayed on top of its own half-applied changes, and the error reported
+-- was the second attempt's — hiding the first, the one that says what actually
+-- broke.
+local transaction_takes_name = nil
+
 local function transact(name, fn)
-  local ok, err = pcall(function() app.transaction(name, fn) end)
-  if ok then return end
-  local ok2, err2 = pcall(function() app.transaction(fn) end)
-  if not ok2 then error(err2 or err, 0) end
+  if transaction_takes_name == nil then
+    -- Only a success is conclusive: this can also fail for reasons that have
+    -- nothing to do with the signature, such as no sprite being active.
+    if pcall(function() app.transaction("AI: probe", function() end) end) then
+      transaction_takes_name = true
+    end
+  end
+
+  if transaction_takes_name then
+    app.transaction(name, fn)
+  else
+    app.transaction(fn)
+  end
 end
 
 --------------------------------------------------------------------------------
@@ -1804,7 +1823,12 @@ H["transform.apply"] = function(args)
 
   transact("AI: " .. op, function()
     if op == "crop_to_content" then
-      preserving_site(function() app.sprite = s; app.command.CanvasSize{ ui = false, trimOutside = true } end)
+      -- AutocropSprite is Aseprite's own Sprite > Trim. CanvasSize's
+      -- `trimOutside` sounds like it and is not: it trims to the *selection*,
+      -- so with none set this silently did nothing and still reported success.
+      local before = s.width * s.height
+      preserving_site(function() app.sprite = s; app.command.AutocropSprite{ ui = false } end)
+      changed = before - s.width * s.height
       return
     end
 
@@ -2086,13 +2110,23 @@ H["reference.apply"] = function(args)
   end
 
   local path = need(args.path, "path")
+
+  -- app.open makes the reference the active sprite, and closing it again leaves
+  -- NO active sprite at all. app.transaction then refuses to run — raising a
+  -- value that is not even a string, so the agent saw an unreadable error — and
+  -- in the UI the user's tab had silently changed under them either way.
+  local restore = app.sprite
   local source = app.open(path)
-  if not source then fault("aseprite_error", "Could not open '" .. path .. "'.") end
+  if not source then
+    app.sprite = restore
+    fault("aseprite_error", "Could not open '" .. path .. "'.")
+  end
 
   local flat = Image(source.width, source.height, ColorMode.RGB)
   flat:drawSprite(source, source.frames[1])
   local sw, sh = source.width, source.height
   source:close()
+  app.sprite = restore
 
   if op == "sample_palette" then
     local counts, total = {}, 0

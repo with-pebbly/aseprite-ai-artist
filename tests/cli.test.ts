@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createServer } from "node:net";
 import { Bridge } from "../dist/bridge/bridge.js";
+import { linkLines } from "../dist/lib/report.js";
 
 const run = promisify(execFile);
 
@@ -11,8 +12,6 @@ const run = promisify(execFile);
 const PORTS = {
   noBridge: { plugin: 19951, control: 19952 },
   ownBridge: { plugin: 19953, control: 19954 },
-  // Privileged: nothing can bind them, and connecting is refused at once.
-  blocked: { plugin: 1, control: 2 },
 };
 
 function isListening(port: number): Promise<boolean> {
@@ -95,15 +94,66 @@ test("a bridge that was already up is reported as found, and left running", asyn
   }
 });
 
-test("with no reachable bridge, the extension is 'unknown' rather than blamed", async () => {
-  // Privileged ports make the failure certain and instant, with no socket to
-  // clean up: connecting is refused straight away, and the bridge doctor tries
-  // to start cannot bind them either. Before this, doctor told the user to go
-  // open Aseprite — advice that fixes nothing, because Aseprite was never the
-  // thing that was broken.
-  const out = await doctor(PORTS.blocked);
+// The wording itself is checked here rather than through a subprocess: making a
+// bridge genuinely unreachable needs a port nothing can bind, and "nothing" is
+// not the same set on every OS — a Windows runner runs as admin and binds the
+// privileged ports a POSIX one refuses.
 
-  assert.match(out, /✗ Bridge {2,}could not reach or start it/);
-  assert.match(out, /· Aseprite extension {2,}unknown — cannot be checked without a bridge/);
-  assert.doesNotMatch(out, /open Aseprite/);
+test("a bridge started by the check is not reported as a healthy setup", () => {
+  const [bridge] = linkLines({
+    bridgeUp: true,
+    wasAlreadyRunning: false,
+    pluginUp: false,
+    controlPort: 9932,
+  });
+  assert.doesNotMatch(bridge, /✓/, "a bridge this command started must not read as a tick");
+  assert.match(bridge, /started one to test/);
+});
+
+test("a bridge that was already running is a tick", () => {
+  const [bridge] = linkLines({
+    bridgeUp: true,
+    wasAlreadyRunning: true,
+    pluginUp: true,
+    controlPort: 9932,
+  });
+  assert.match(bridge, /^✓ Bridge/);
+  assert.match(bridge, /ws:\/\/127\.0\.0\.1:9932/);
+});
+
+test("with no bridge the extension is unknown, and Aseprite is not blamed", () => {
+  const [bridge, extension] = linkLines({
+    bridgeUp: false,
+    wasAlreadyRunning: false,
+    pluginUp: false,
+    controlPort: 9932,
+  });
+  assert.match(bridge, /^✗ Bridge/);
+  assert.match(extension, /unknown — cannot be checked without a bridge/);
+  // Sending the user to reinstall an extension that was never the problem.
+  assert.doesNotMatch(extension, /open Aseprite/);
+});
+
+test("a reachable bridge with no Aseprite names the fix", () => {
+  const [, extension] = linkLines({
+    bridgeUp: true,
+    wasAlreadyRunning: true,
+    pluginUp: false,
+    controlPort: 9932,
+  });
+  assert.match(extension, /^✗ Aseprite extension/);
+  assert.match(extension, /install-extension/);
+});
+
+test("a connected extension reports both versions", () => {
+  const [, extension] = linkLines({
+    bridgeUp: true,
+    wasAlreadyRunning: true,
+    pluginUp: true,
+    controlPort: 9932,
+    extensionVersion: "0.1.0",
+    asepriteVersion: "1.3.17",
+  });
+  assert.match(extension, /^✓ Aseprite extension/);
+  assert.match(extension, /0\.1\.0 on Aseprite 1\.3\.17/);
 });
