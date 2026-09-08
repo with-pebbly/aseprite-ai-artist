@@ -34,7 +34,15 @@ jobs:
           luaVersion: "5.4"
       # The extension cannot run outside Aseprite, but a parse error would break
       # every user's install, so at minimum it must compile.
-      - run: luac -p extension/ai-artist.lua tests/extension.test.lua
+      # One file per invocation: `luac -p` with several arguments concatenates
+      # them internally and double-frees on exit (exit 134), which looks like a
+      # syntax error in the sources and is not one.
+      - name: Parse-check Lua sources
+        run: |
+          for file in extension/ai-artist.lua tests/extension.test.lua; do
+            echo "checking $file"
+            luac -p "$file"
+          done
 
   package:
     name: Package contents
