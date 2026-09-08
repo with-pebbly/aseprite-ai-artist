@@ -43,10 +43,19 @@ First release.
   bridge transport and the MCP surface; a headless Lua harness running the real
   extension handlers inside `aseprite -b` against a real sprite.
 
+- **Tilesets** — `pack` turns a hand-painted mockup into a deduplicated tileset
+  plus a tilemap that reconstructs it pixel for pixel (with an optional
+  `tolerance` for merging near-identical cells), and `export` writes Tiled
+  (`.tsj` tileset plus a `.tmj` map that uses it), Godot 4 (`.tres`) or JSON,
+  each beside a packed PNG. `layout: "blob47"` adds a Tiled wangset whose 47
+  canonical masks are computed, not hardcoded.
+
 ### Known limits
 
-- `tileset` ops `pack` and `export` are not implemented; they return
-  `unsupported_command` rather than pretending.
+- `blob47` export assumes the tileset is authored in canonical blob-mask order
+  and refuses an incomplete set rather than writing a wangset that would
+  autotile wrongly.
+- Godot export targets Godot 4 (`TileSetAtlasSource`); Godot 3 is not emitted.
 - Re-establishing a *dropped* Aseprite connection can wait until the Aseprite
   window is focused once. A live connection keeps working unfocused.
 - `look` op `ascii` refuses above 64×64; pass a region.

@@ -101,7 +101,15 @@ export function registerAssetTools(server: McpServer, live: LiveClient): void {
     {
       title: "Tilesets",
       description:
-        "Work with Aseprite tilemap layers. Ops: 'list', 'create_layer', 'get' (tiles as a packed image plus indices), 'stamp' (place tiles by grid coordinate), 'pack' (deduplicate a hand-painted mockup into a tileset plus a reconstructing tilemap), 'export' (Tiled .tsj, Godot .tres or JSON, with the packed PNG beside it). " +
+        "Work with Aseprite tilemap layers. Ops:\n" +
+        "• 'list' — tilesets in the sprite.\n" +
+        "• 'create_layer' — a new empty tilemap layer on a given grid.\n" +
+        "• 'get' — tile count and, with a path, the tiles as one packed PNG.\n" +
+        "• 'stamp' — place tiles by grid coordinate. x/y are grid cells, not pixels.\n" +
+        "• 'pack' — turn a hand-painted mockup layer into a tileset plus a tilemap that reconstructs it exactly. Deduplicates identical cells; `tolerance` also merges near-identical ones. The canvas must be a whole number of tiles, and the source layer is hidden rather than deleted so you can compare.\n" +
+        "• 'export' — writes the packed PNG plus the file the engine reads: 'tiled' (.tsj tileset and a .tmj map that uses it), 'godot' (Godot 4 .tres TileSet), or 'json' (tile grid plus the tilemap layout).\n" +
+        "Painting a level by hand and packing it produces better tilesets than authoring tiles in isolation, because you see the whole picture while drawing. " +
+        "`layout: 'blob47'` adds a Tiled wangset for autotiling, and assumes the tileset is authored in canonical blob47 order after the empty tile — it refuses rather than writing a wangset that would autotile wrongly. " +
         "Requires an extension build advertising the 'tileset' feature — check preflight first.",
       inputSchema: {
         op: z.enum(["list", "create_layer", "get", "stamp", "pack", "export"]),
@@ -116,7 +124,15 @@ export function registerAssetTools(server: McpServer, live: LiveClient): void {
         path: z.string().optional().describe("Output path for 'export' and 'get'."),
         format: z.enum(["tiled", "godot", "json"]).default("tiled"),
         layout: z.enum(["grid", "blob47"]).default("grid").describe("Autotile layout for 'export'."),
-        tolerance: z.number().int().min(0).max(64).default(0).describe("For 'pack': treat near-identical tiles as one."),
+        tolerance: z
+          .number()
+          .int()
+          .min(0)
+          .max(255)
+          .default(0)
+          .describe(
+            "For 'pack': maximum per-channel difference at which two cells count as the same tile. 0 means exact, which is also much faster — anything above 0 compares every cell against every tile found so far.",
+          ),
       },
       outputSchema: {
         sprite: z.string(),
@@ -125,8 +141,19 @@ export function registerAssetTools(server: McpServer, live: LiveClient): void {
           .array(z.object({ name: z.string(), tileCount: z.number().int(), tileWidth: z.number().int(), tileHeight: z.number().int() }))
           .optional(),
         tileCount: z.number().int().optional(),
+        tileWidth: z.number().int().optional(),
+        tileHeight: z.number().int().optional(),
+        columns: z.number().int().optional(),
+        rows: z.number().int().optional(),
         files: z.array(z.string()).optional(),
         layer: z.string().optional(),
+        sourceLayer: z.string().optional().describe("For 'pack': the mockup layer, now hidden."),
+        cellCount: z.number().int().optional().describe("For 'pack': grid cells examined."),
+        reusedExact: z.number().int().optional().describe("For 'pack': cells that matched an existing tile exactly."),
+        reusedFuzzy: z.number().int().optional().describe("For 'pack': cells merged by `tolerance`. A high number here with a low tolerance means the mockup has near-duplicate tiles worth cleaning up."),
+        skipped: z.number().int().optional().describe("For 'stamp': placements outside the grid or naming a tile that does not exist."),
+        format: z.string().optional(),
+        layout: z.string().optional(),
       },
       annotations: { readOnlyHint: false, openWorldHint: false },
     },
@@ -140,10 +167,38 @@ export function registerAssetTools(server: McpServer, live: LiveClient): void {
           );
         }
         const data = await live.call<Record<string, unknown>>("tileset.apply", args);
-        return ok(data);
+        return ok(data, describeTileset(args.op, data));
       } catch (err) {
         return fail(err);
       }
     },
   );
+}
+
+function describeTileset(op: string, data: Record<string, unknown>): string | undefined {
+  if (op === "pack") {
+    const cells = Number(data.cellCount ?? 0);
+    const tiles = Number(data.tileCount ?? 0);
+    const fuzzy = Number(data.reusedFuzzy ?? 0);
+    const lines = [
+      `${cells} cell(s) packed into ${tiles} tile(s) on '${String(data.layer)}'. '${String(data.sourceLayer)}' is hidden, not deleted — unhide it to compare.`,
+    ];
+    if (fuzzy > 0) {
+      lines.push(`${fuzzy} cell(s) were merged by tolerance, so the tilemap is an approximation of the mockup, not a copy.`);
+    }
+    if (tiles > cells / 2) {
+      lines.push(
+        `That is a lot of unique tiles for ${cells} cells — usually a sign the mockup was painted without the grid in mind. Check the tile size before building on it.`,
+      );
+    }
+    return lines.join(" ");
+  }
+  if (op === "export") {
+    const files = (data.files as string[]) ?? [];
+    return `Wrote ${files.length} file(s) for ${String(data.format)}: ${files.join(", ")}`;
+  }
+  if (op === "stamp" && Number(data.skipped ?? 0) > 0) {
+    return `Placed ${String(data.tileCount)} tile(s); skipped ${String(data.skipped)} outside the ${String(data.columns)}x${String(data.rows)} grid or naming a tile that does not exist.`;
+  }
+  return undefined;
 }

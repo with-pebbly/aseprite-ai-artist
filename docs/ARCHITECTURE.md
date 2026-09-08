@@ -117,6 +117,10 @@ pixels is worse than either being wrong alone.
   focused once.
 - **Text grids are capped at 64×64.** Above that, `look` op `ascii` refuses and
   asks for a region. A wall of text is worse than no answer.
-- **Tileset support is partial.** `list`, `create_layer`, `get` and `stamp`
-  work; `pack` and `export` are not implemented yet and return
-  `unsupported_command` rather than pretending.
+- **blob47 export assumes canonical ordering.** The wangset it writes maps
+  atlas slot *n* to the *n*-th canonical blob mask in ascending order. A tileset
+  authored in a different order exports a wangset that autotiles wrongly, so
+  the export refuses unless the set has all 47 tiles. `tileset` op `export` with
+  `format: "json"` reports the index-to-mask mapping if you need to check.
+- **Godot export targets Godot 4.** It writes a `TileSet` with a single
+  `TileSetAtlasSource`; Godot 3's format is different and is not emitted.

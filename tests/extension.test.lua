@@ -222,6 +222,297 @@ check("a batch arriving as decoded JSON draws every op", function()
   assertEq(reply.data.pixelsChanged, 3, "pixelsChanged")
 end)
 
+check("blob47 mask reduction yields exactly 47 canonical tiles", function()
+  -- Computed, not hardcoded: if this ever stops being 47 the export refuses
+  -- rather than writing a wangset that autotiles wrongly.
+  local reply = A.handleCommand({ id = "t", cmd = "tileset.apply",
+    args = { op = "list" } })
+  assert(reply.ok, "tileset.list failed")
+  assertEq(#A.blob47Masks(), 47, "canonical blob47 mask count")
+  -- The all-empty and all-full masks must both be present.
+  local masks = A.blob47Masks()
+  assertEq(masks[1], 0, "first mask")
+  assertEq(masks[#masks], 255, "last mask")
+end)
+
+check("tileset pack deduplicates a mockup and rebuilds it exactly", function()
+  -- A 32x32 mockup of 8x8 cells: a 2x2 checker of two distinct tiles, so 16
+  -- cells must collapse to 2 unique tiles.
+  local mock = Sprite(32, 32, ColorMode.RGB)
+  app.sprite = mock
+  local painted = app.layer
+  painted.name = "mockup"
+
+  local drew = A.handleCommand({ id = "t", cmd = "draw.batch", args = {
+    layer = "mockup", paletteLock = false,
+    ops = (function()
+      local ops = {}
+      for row = 0, 3 do
+        for col = 0, 3 do
+          ops[#ops + 1] = {
+            kind = "rect",
+            rect = { x = col * 8, y = row * 8, width = 8, height = 8 },
+            color = ((col + row) % 2 == 0) and "#ff004d" or "#29adff",
+            fill  = ((col + row) % 2 == 0) and "#ff004d" or "#29adff",
+          }
+        end
+      end
+      return ops
+    end)(),
+  } })
+  assert(drew.ok, "mockup draw failed: " .. tostring(drew.error and drew.error.message))
+
+  local before = A.handleCommand({ id = "t", cmd = "pixels.read",
+    args = { region = { x = 0, y = 0, width = 32, height = 32 } } })
+  assert(before.ok, "read before failed")
+
+  local packed = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
+    op = "pack", layer = "mockup", name = "terrain", tileWidth = 8, tileHeight = 8,
+  } })
+  assert(packed.ok, "pack failed: " .. tostring(packed.error and packed.error.message))
+  assertEq(packed.data.tileCount, 2, "unique tiles")
+  assertEq(packed.data.cellCount, 16, "cells")
+  assertEq(packed.data.reusedExact, 14, "exact reuse")
+  assertEq(packed.data.columns, 4, "grid columns")
+
+  -- The tilemap must reconstruct the mockup pixel for pixel, with the source
+  -- layer hidden. That is the whole claim of `pack`.
+  local after = A.handleCommand({ id = "t", cmd = "pixels.read",
+    args = { region = { x = 0, y = 0, width = 32, height = 32 } } })
+  assert(after.ok, "read after failed")
+  for i = 1, #before.data.grid do
+    local a = before.data.colors[before.data.grid[i] + 1]
+    local b = after.data.colors[after.data.grid[i] + 1]
+    if a ~= b then
+      error("pixel " .. i .. " differs after packing: " .. tostring(a) .. " vs " .. tostring(b), 0)
+    end
+  end
+
+  mock:close()
+  app.sprite = sprite
+end)
+
+check("tileset pack refuses a canvas that is not a whole number of tiles", function()
+  local odd = Sprite(30, 32, ColorMode.RGB)
+  app.sprite = odd
+  app.layer.name = "mockup"
+  A.handleCommand({ id = "t", cmd = "draw.batch", args = { layer = "mockup", paletteLock = false,
+    ops = { { kind = "rect", rect = { x = 0, y = 0, width = 10, height = 10 },
+              color = "#ffffff", fill = "#ffffff" } } } })
+  local reply = A.handleCommand({ id = "t", cmd = "tileset.apply",
+    args = { op = "pack", layer = "mockup", tileWidth = 16, tileHeight = 16 } })
+  assert(not reply.ok, "packing a 30px canvas into 16px tiles should refuse")
+  assertEq(reply.error.code, "invalid_args", "error code")
+  assert(reply.error.message:find("whole number"), "message should explain why")
+  odd:close()
+  app.sprite = sprite
+end)
+
+check("tileset export writes a Tiled tileset, map and packed png", function()
+  local mock = Sprite(32, 32, ColorMode.RGB)
+  app.sprite = mock
+  app.layer.name = "mockup"
+  A.handleCommand({ id = "t", cmd = "draw.batch", args = { layer = "mockup", paletteLock = false,
+    ops = {
+      { kind = "rect", rect = { x = 0, y = 0, width = 16, height = 16 }, color = "#ff004d", fill = "#ff004d" },
+      { kind = "rect", rect = { x = 16, y = 16, width = 16, height = 16 }, color = "#29adff", fill = "#29adff" },
+    } } })
+  local packed = A.handleCommand({ id = "t", cmd = "tileset.apply",
+    args = { op = "pack", layer = "mockup", name = "terrain", tileWidth = 16, tileHeight = 16 } })
+  assert(packed.ok, "pack failed: " .. tostring(packed.error and packed.error.message))
+
+  local out = app.fs.joinPath(app.fs.tempPath, "ai-artist-test-terrain.tsj")
+  local reply = A.handleCommand({ id = "t", cmd = "tileset.apply",
+    args = { op = "export", layer = "terrain", path = out, format = "tiled" } })
+  assert(reply.ok, "export failed: " .. tostring(reply.error and reply.error.message))
+
+  local base = app.fs.joinPath(app.fs.tempPath, "ai-artist-test-terrain")
+  assert(app.fs.isFile(base .. ".png"), "packed png missing")
+  assert(app.fs.isFile(base .. ".tsj"), "tileset json missing")
+  assert(app.fs.isFile(base .. ".tmj"), "map json missing")
+
+  local handle = io.open(base .. ".tsj", "r")
+  local doc = json.decode(handle:read("a"))
+  handle:close()
+  assertEq(doc.type, "tileset", "tsj type")
+  assertEq(doc.tilewidth, 16, "tile width")
+  assertEq(doc.tilecount, reply.data.tileCount, "tile count")
+  -- Aseprite's reserved empty tile must NOT occupy an atlas slot, or every
+  -- real tile shifts by one and the map renders one tile off everywhere.
+  assertEq(doc.tilecount, 2, "empty tile must be excluded from the atlas")
+  assert(doc.image:find("%.png$"), "image reference should be the packed png")
+
+  local mh = io.open(base .. ".tmj", "r")
+  local map = json.decode(mh:read("a"))
+  mh:close()
+  assertEq(map.type, "map", "tmj type")
+  assertEq(map.width, 2, "map width in tiles")
+  assertEq(#map.layers[1].data, 4, "map data length")
+  assertEq(map.tilesets[1].firstgid, 1, "firstgid")
+
+  -- The mockup filled the top-left and bottom-right 16x16 cells and left the
+  -- other two transparent, so the gids must be: tile, empty, empty, tile —
+  -- with 0 meaning empty and every non-zero gid inside the tileset.
+  local data = map.layers[1].data
+  assertEq(data[2], 0, "transparent cell must be gid 0")
+  assertEq(data[3], 0, "transparent cell must be gid 0")
+  assert(data[1] > 0 and data[1] <= doc.tilecount, "gid " .. data[1] .. " out of range")
+  assert(data[4] > 0 and data[4] <= doc.tilecount, "gid " .. data[4] .. " out of range")
+  assert(data[1] ~= data[4], "two differently coloured cells must be different tiles")
+
+  mock:close()
+  app.sprite = sprite
+end)
+
+check("tileset export writes Godot and JSON targets", function()
+  local mock = Sprite(32, 32, ColorMode.RGB)
+  app.sprite = mock
+  app.layer.name = "mockup"
+  A.handleCommand({ id = "t", cmd = "draw.batch", args = { layer = "mockup", paletteLock = false,
+    ops = {
+      { kind = "rect", rect = { x = 0, y = 0, width = 16, height = 16 }, color = "#ff004d", fill = "#ff004d" },
+      { kind = "rect", rect = { x = 16, y = 0, width = 16, height = 16 }, color = "#29adff", fill = "#29adff" },
+      { kind = "rect", rect = { x = 0, y = 16, width = 16, height = 16 }, color = "#00e436", fill = "#00e436" },
+    } } })
+  A.handleCommand({ id = "t", cmd = "tileset.apply",
+    args = { op = "pack", layer = "mockup", name = "terrain", tileWidth = 16, tileHeight = 16 } })
+
+  local base = app.fs.joinPath(app.fs.tempPath, "ai-artist-test-godot")
+  local godot = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
+    op = "export", layer = "terrain", path = base .. ".tres", format = "godot" } })
+  assert(godot.ok, "godot export failed: " .. tostring(godot.error and godot.error.message))
+  assert(app.fs.isFile(base .. ".tres"), "tres missing")
+  local gh = io.open(base .. ".tres", "r")
+  local tres = gh:read("a")
+  gh:close()
+  assert(tres:find('%[gd_resource type="TileSet"'), "not a Godot TileSet resource")
+  assert(tres:find('texture_region_size = Vector2i%(16, 16%)'), "missing region size")
+  assert(tres:find('sources/0 = SubResource'), "atlas source not wired to the resource")
+  -- Atlas coordinates start at 0:0; a stray entry for the dropped empty tile
+  -- would push everything off by one slot.
+  assert(tres:find('\n0:0/0 = 0'), "atlas must start at 0:0")
+
+  local jbase = app.fs.joinPath(app.fs.tempPath, "ai-artist-test-tiles")
+  local jsonx = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
+    op = "export", layer = "terrain", path = jbase .. ".json", format = "json" } })
+  assert(jsonx.ok, "json export failed: " .. tostring(jsonx.error and jsonx.error.message))
+  local jh = io.open(jbase .. ".json", "r")
+  local doc = json.decode(jh:read("a"))
+  jh:close()
+  assertEq(doc.tileWidth, 16, "tile width")
+  assertEq(doc.map.width, 2, "map width")
+  assertEq(#doc.map.tiles, 4, "map tile count")
+  assertEq(doc.tileCount, 3, "three painted cells, three tiles, empty excluded")
+  assert(doc.indexing:find("atlas slot"), "the index convention must be stated in the file")
+
+  local bad = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
+    op = "export", layer = "terrain", path = jbase .. ".xyz", format = "nonsense" } })
+  assert(not bad.ok, "an unknown format must be refused")
+  assertEq(bad.error.code, "invalid_args", "error code")
+
+  mock:close()
+  app.sprite = sprite
+end)
+
+check("tileset stamp reports placements it could not make", function()
+  local mock = Sprite(32, 32, ColorMode.RGB)
+  app.sprite = mock
+  app.layer.name = "mockup"
+  A.handleCommand({ id = "t", cmd = "draw.batch", args = { layer = "mockup", paletteLock = false,
+    ops = { { kind = "rect", rect = { x = 0, y = 0, width = 16, height = 16 },
+              color = "#ff004d", fill = "#ff004d" } } } })
+  A.handleCommand({ id = "t", cmd = "tileset.apply",
+    args = { op = "pack", layer = "mockup", name = "terrain", tileWidth = 16, tileHeight = 16 } })
+
+  local reply = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
+    op = "stamp", layer = "terrain",
+    tiles = {
+      { x = 0, y = 0, tile = 1 },   -- fine
+      { x = 9, y = 9, tile = 1 },   -- outside the 2x2 grid
+      { x = 1, y = 1, tile = 99 },  -- no such tile
+    } } })
+  assert(reply.ok, "stamp failed: " .. tostring(reply.error and reply.error.message))
+  assertEq(reply.data.tileCount, 1, "placed")
+  assertEq(reply.data.skipped, 2, "skipped")
+
+  mock:close()
+  app.sprite = sprite
+end)
+
+check("blob47 export writes a wangset whose ids are atlas slots", function()
+  -- 48 tiles: the reserved empty one plus the 47 blob tiles. Built as a strip
+  -- of 48 distinct 8px cells so packing yields exactly 47 unique tiles.
+  local w = 48 * 8
+  local mock = Sprite(w, 8, ColorMode.RGB)
+  app.sprite = mock
+  app.layer.name = "mockup"
+  local ops = {}
+  for i = 0, 46 do
+    -- Distinct colour per cell so no two cells dedupe into one tile.
+    local c = string.format("#%02x%02x%02x", (i * 5) % 256, (i * 11) % 256, (i * 23) % 256)
+    ops[#ops + 1] = { kind = "rect", rect = { x = i * 8, y = 0, width = 8, height = 8 },
+                      color = c, fill = c }
+  end
+  local drew = A.handleCommand({ id = "t", cmd = "draw.batch",
+    args = { layer = "mockup", paletteLock = false, ops = ops } })
+  assert(drew.ok, "strip draw failed: " .. tostring(drew.error and drew.error.message))
+
+  local packed = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
+    op = "pack", layer = "mockup", name = "blob", tileWidth = 8, tileHeight = 8 } })
+  assert(packed.ok, "pack failed: " .. tostring(packed.error and packed.error.message))
+  assertEq(packed.data.tileCount, 47, "47 unique blob tiles")
+
+  local base = app.fs.joinPath(app.fs.tempPath, "ai-artist-test-blob47")
+  local reply = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
+    op = "export", layer = "blob", path = base .. ".tsj", format = "tiled", layout = "blob47" } })
+  assert(reply.ok, "blob47 export failed: " .. tostring(reply.error and reply.error.message))
+
+  local h = io.open(base .. ".tsj", "r")
+  local doc = json.decode(h:read("a"))
+  h:close()
+  assertEq(#doc.wangsets, 1, "one wangset")
+  local ws = doc.wangsets[1]
+  assertEq(ws.name, "blob47", "wangset name")
+  assertEq(#ws.wangtiles, 47, "wangtile count")
+  assertEq(#ws.colors, 2, "terrain and empty must both be explicit")
+  -- Ids are atlas slots, so they run 0..46 and every one must be in range.
+  assertEq(ws.wangtiles[1].tileid, 0, "first wangtile id")
+  assertEq(ws.wangtiles[47].tileid, 46, "last wangtile id")
+  for _, wt in ipairs(ws.wangtiles) do
+    assert(wt.tileid >= 0 and wt.tileid < doc.tilecount,
+      "wangtile id " .. wt.tileid .. " outside the atlas (" .. doc.tilecount .. " tiles)")
+    assertEq(#wt.wangid, 8, "wangid length")
+    for _, v in ipairs(wt.wangid) do
+      assert(v == 1 or v == 2, "wangid entries must name a colour, got " .. tostring(v))
+    end
+  end
+  -- Mask 0 is all-empty and mask 255 is all-terrain; those bracket the set.
+  assertEq(ws.wangtiles[1].wangid[1], 2, "first tile has no neighbours")
+  assertEq(ws.wangtiles[47].wangid[1], 1, "last tile is fully surrounded")
+
+  mock:close()
+  app.sprite = sprite
+end)
+
+check("tileset export refuses blob47 without a full blob set", function()
+  local mock = Sprite(32, 32, ColorMode.RGB)
+  app.sprite = mock
+  app.layer.name = "mockup"
+  A.handleCommand({ id = "t", cmd = "draw.batch", args = { layer = "mockup", paletteLock = false,
+    ops = { { kind = "rect", rect = { x = 0, y = 0, width = 16, height = 16 },
+              color = "#ff004d", fill = "#ff004d" } } } })
+  A.handleCommand({ id = "t", cmd = "tileset.apply",
+    args = { op = "pack", layer = "mockup", name = "terrain", tileWidth = 16, tileHeight = 16 } })
+  local reply = A.handleCommand({ id = "t", cmd = "tileset.apply", args = {
+    op = "export", layer = "terrain", format = "tiled", layout = "blob47",
+    path = app.fs.joinPath(app.fs.tempPath, "ai-artist-test-blob.tsj"),
+  } })
+  assert(not reply.ok, "a 1-tile set must not export as blob47")
+  assert(reply.error.message:find("47"), "message should name the requirement")
+  mock:close()
+  app.sprite = sprite
+end)
+
 check("json encoder emits arrays for empty tables", function()
   assertEq(A.encodeJson({}), "[]", "empty table")
   assertEq(A.encodeJson({ 1, 2 }), "[1,2]", "array")

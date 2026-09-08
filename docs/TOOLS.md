@@ -68,7 +68,7 @@ forcing it.
 |------|-----|-------|
 | `reference` | `import` `sample_palette` `list` `remove` | Imports on a locked, semi-transparent layer. |
 | `export` | `png` `gif` `spritesheet` `frames` `aseprite` | `spritesheet` writes a JSON atlas beside the PNG. |
-| `tileset` | `list` `create_layer` `get` `stamp` `pack` `export` | Needs the `tileset` feature. `pack` and `export` are not implemented yet and say so. |
+| `tileset` | `list` `create_layer` `get` `stamp` `pack` `export` | Needs the `tileset` feature. `pack` turns a painted mockup into a tileset plus a reconstructing tilemap; `export` writes Tiled (`.tsj` + `.tmj`), Godot 4 (`.tres`) or JSON, with the packed PNG. |
 
 ## Escape hatch
 

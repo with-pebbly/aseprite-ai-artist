@@ -85,6 +85,33 @@ console.log("  ", (await call("recolor", { op: "shade", amount: -0.25, frame: 1 
 console.log("— export png");
 console.log("  ", (await call("export", { op: "png", frame: 1, path: process.env.E2E_OUT || "/tmp/aseprite-ai-artist-e2e.png", scale: 8 })).content[0].text);
 
+console.log("— tileset: paint a mockup, pack it, export for Tiled");
+console.log("  ", (await call("sprite_manage", { op: "new", width: 64, height: 64, colorMode: "rgb" })).content[0].text);
+await call("layer", { op: "rename", name: "Layer 1", newName: "mockup" });
+{
+  // A 4x4 grid of 16px cells using three colours, so packing must collapse
+  // 16 cells into 3 tiles.
+  const ops = [];
+  const colors = ["#ff004d", "#29adff", "#00e436"];
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 4; col++) {
+      const c = colors[(row + col) % 3];
+      ops.push({ kind: "rect", rect: { x: col * 16, y: row * 16, width: 16, height: 16 }, color: c, fill: c });
+    }
+  }
+  console.log("  ", (await call("draw", { layer: "mockup", paletteLock: false, ops })).content[0].text);
+}
+const packed = await call("tileset", { op: "pack", layer: "mockup", name: "terrain", tileWidth: 16, tileHeight: 16 });
+console.log("  ", packed.content[0].text);
+console.log("   structured:", JSON.stringify(packed.structuredContent));
+const tsOut = (process.env.E2E_OUT || "/tmp/aseprite-ai-artist-e2e.png").replace(/\.png$/, "-terrain.tsj");
+const exported = await call("tileset", { op: "export", layer: "terrain", path: tsOut, format: "tiled" });
+console.log("  ", exported.content[0].text);
+console.log("— look at the packed tileset");
+const tsLook = await call("look", { op: "preview" });
+console.log("  ", tsLook.content[0].text, "| image bytes:", tsLook.content[1].data.length);
+await call("sprite_manage", { op: "close", force: true });
+
 console.log("— close without saving (should refuse)");
 const closed = await client.callTool({ name: "sprite_manage", arguments: { op: "close" } });
 console.log("  isError:", closed.isError, "|", closed.content[0].text.split("\n")[0]);

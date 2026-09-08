@@ -54,6 +54,13 @@ Aseprite's Lua environment is not plain Lua, and its deviations fail silently:
   with no active sprite.
 - **A Lua table cannot hold a `nil` value**, so an absent field is a missing key
   and never an explicit null. Output schemas use `.nullish()`, not `.nullable()`.
+- **A tilemap cel needs a `ColorMode.TILEMAP` image**, built from an `ImageSpec`.
+  The generic cel helper hands back an RGB image and every stamp is silently
+  lost.
+- **Tile index 0 is Aseprite's reserved empty tile.** Engines index their atlas
+  from 0, so leaving it in an exported atlas shifts every real tile by one and
+  the map renders one tile off everywhere. The exporter drops it; `get` keeps it
+  so atlas position still matches the index you pass to `stamp`.
 
 ## Testing
 

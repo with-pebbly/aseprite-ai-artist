@@ -554,6 +554,70 @@ function Draw.dither(img, ox, oy, r, a, b, pattern, ratio)
 end
 
 --------------------------------------------------------------------------------
+-- JSON encoding
+--
+-- Aseprite ships json.decode/json.encode, but its encoder renders an empty Lua
+-- table as `{}`, and this protocol has fields the server validates as arrays
+-- (colorsSnapped, findings, files…). An empty result would fail schema
+-- validation on the far side and turn a successful edit into an error the user
+-- sees. Encoding here fixes the rule explicitly: a table is an array unless it
+-- has a non-integer key.
+--------------------------------------------------------------------------------
+
+local function is_array(t)
+  for k in pairs(t) do
+    if type(k) ~= "number" then return false end
+  end
+  return true
+end
+
+local ESCAPES = {
+  ['"'] = '\\"', ["\\"] = "\\\\", ["\b"] = "\\b", ["\f"] = "\\f",
+  ["\n"] = "\\n", ["\r"] = "\\r", ["\t"] = "\\t",
+}
+
+local function encode_string(s)
+  return '"' .. s:gsub('[%c"\\]', function(c)
+    return ESCAPES[c] or string.format("\\u%04x", c:byte())
+  end) .. '"'
+end
+
+local encode_value
+
+local function encode_table(t, depth)
+  if depth > 24 then return "null" end
+  if is_array(t) then
+    local parts = {}
+    for i = 1, #t do parts[i] = encode_value(t[i], depth + 1) end
+    return "[" .. table.concat(parts, ",") .. "]"
+  end
+  local parts = {}
+  for k, v in pairs(t) do
+    local encoded = encode_value(v, depth + 1)
+    if encoded ~= nil then
+      parts[#parts + 1] = encode_string(tostring(k)) .. ":" .. encoded
+    end
+  end
+  return "{" .. table.concat(parts, ",") .. "}"
+end
+
+encode_value = function(v, depth)
+  local t = type(v)
+  if v == nil then return "null" end
+  if t == "boolean" then return tostring(v) end
+  if t == "string" then return encode_string(v) end
+  if t == "number" then
+    if v ~= v or v == math.huge or v == -math.huge then return "null" end
+    if v == math.floor(v) and math.abs(v) < 2 ^ 53 then return string.format("%d", v) end
+    return string.format("%.6g", v)
+  end
+  if t == "table" then return encode_table(v, depth or 0) end
+  return encode_string(tostring(v))
+end
+
+local function encode_json(v) return encode_value(v, 0) end
+
+--------------------------------------------------------------------------------
 -- Command handlers
 --------------------------------------------------------------------------------
 
@@ -2012,6 +2076,145 @@ end
 -- Tilesets
 --------------------------------------------------------------------------------
 
+--------------------------------------------------------------------------------
+-- Tileset helpers
+--------------------------------------------------------------------------------
+
+--- Copy one grid cell out of a canvas-sized image.
+local function extract_cell(source, x0, y0, w, h, mode)
+  local cell = Image(w, h, mode)
+  for y = 0, h - 1 do
+    for x = 0, w - 1 do
+      local sx, sy = x0 + x, y0 + y
+      if sx < source.width and sy < source.height then
+        cell:drawPixel(x, y, source:getPixel(sx, sy))
+      end
+    end
+  end
+  return cell
+end
+
+--- Exact identity key for a cell. Used for the tolerance-0 fast path, where a
+--- hash lookup turns an O(cells x tiles) scan into O(cells).
+local function cell_key(cell)
+  local parts = {}
+  for y = 0, cell.height - 1 do
+    for x = 0, cell.width - 1 do
+      parts[#parts + 1] = cell:getPixel(x, y)
+    end
+  end
+  return table.concat(parts, ",")
+end
+
+local function cell_is_empty(cell, sprite)
+  for y = 0, cell.height - 1 do
+    for x = 0, cell.width - 1 do
+      if pixel_to_hex(sprite, cell:getPixel(x, y)) ~= nil then return false end
+    end
+  end
+  return true
+end
+
+--- Per-channel max difference between two same-sized cells, 0-255.
+local function cell_distance(a, b)
+  local pc = app.pixelColor
+  local worst = 0
+  for y = 0, a.height - 1 do
+    for x = 0, a.width - 1 do
+      local pa, pb = a:getPixel(x, y), b:getPixel(x, y)
+      if pa ~= pb then
+        local d = math.max(
+          math.abs(pc.rgbaR(pa) - pc.rgbaR(pb)),
+          math.abs(pc.rgbaG(pa) - pc.rgbaG(pb)),
+          math.abs(pc.rgbaB(pa) - pc.rgbaB(pb)),
+          math.abs(pc.rgbaA(pa) - pc.rgbaA(pb)))
+        if d > worst then
+          worst = d
+          if worst > 255 then return worst end
+        end
+      end
+    end
+  end
+  return worst
+end
+
+--- Pack a tileset's tiles into one image, near-square, row-major.
+---
+--- `skip_empty` drops Aseprite's reserved index-0 empty tile. Engines index the
+--- atlas from 0, so keeping the empty tile in the image shifts every real tile
+--- by one and produces a map that renders one tile off everywhere. Dropping it
+--- makes Aseprite index N land at atlas position N-1, which is exactly the
+--- offset Tiled's `firstgid` of 1 undoes.
+local function pack_tiles(tileset, mode, skip_empty)
+  local first = skip_empty and 1 or 0
+  local count = math.max(0, #tileset - first)
+  local tw = tileset.grid.tileSize.width
+  local th = tileset.grid.tileSize.height
+  local cols = math.max(1, math.ceil(math.sqrt(math.max(count, 1))))
+  local rows = math.max(1, math.ceil(count / cols))
+  local packed = Image(cols * tw, rows * th, mode)
+  for slot = 0, count - 1 do
+    local tile = tileset:tile(slot + first)
+    if tile and tile.image then
+      packed:drawImage(tile.image, Point((slot % cols) * tw, math.floor(slot / cols) * th))
+    end
+  end
+  return packed, cols, rows, tw, th, count
+end
+
+--- Write an image to disk as a PNG via a scratch sprite, optionally upscaled.
+local function write_image(image, mode, palette, path, scale)
+  preserving_site(function()
+    local out = Sprite(image.width, image.height, mode)
+    if mode == ColorMode.INDEXED and palette then out:setPalette(palette) end
+    out.cels[1].image = image
+    if scale and scale > 1 then out:resize(image.width * scale, image.height * scale) end
+    out:saveCopyAs(path)
+    out:close()
+  end)
+end
+
+--------------------------------------------------------------------------------
+-- blob47
+--
+-- The 47-tile "blob" set enumerates every distinct 8-neighbour configuration
+-- once the meaningless ones are removed: a diagonal neighbour only affects the
+-- shape when both edges beside it are also filled, so masks that differ only in
+-- an orphaned corner bit describe the same tile. Reducing all 256 masks by that
+-- rule leaves exactly 47 canonical values, and sorting them ascending is the
+-- ordering nearly every blob47 tileset on the internet is authored in.
+--
+-- This is computed rather than hardcoded so it is checkable: if the reduction
+-- does not yield 47 values, the export refuses instead of writing a wangset
+-- that would autotile wrongly.
+--------------------------------------------------------------------------------
+
+-- Bit layout, matching the wangid order Tiled uses.
+local N, NE, E, SE, S, SW, W, NW = 1, 2, 4, 8, 16, 32, 64, 128
+
+local function reduce_blob_mask(mask)
+  local out = mask
+  -- A corner survives only when both of its adjacent edges are present.
+  if (out & NE) ~= 0 and not ((out & N) ~= 0 and (out & E) ~= 0) then out = out & ~NE end
+  if (out & SE) ~= 0 and not ((out & S) ~= 0 and (out & E) ~= 0) then out = out & ~SE end
+  if (out & SW) ~= 0 and not ((out & S) ~= 0 and (out & W) ~= 0) then out = out & ~SW end
+  if (out & NW) ~= 0 and not ((out & N) ~= 0 and (out & W) ~= 0) then out = out & ~NW end
+  return out
+end
+
+local function blob47_masks()
+  local seen, list = {}, {}
+  for mask = 0, 255 do
+    local reduced = reduce_blob_mask(mask)
+    if not seen[reduced] then
+      seen[reduced] = true
+      list[#list + 1] = reduced
+    end
+  end
+  table.sort(list)
+  return list
+end
+
 H["tileset.apply"] = function(args)
   local s = find_sprite(args.sprite)
   local op = need(args.op, "op")
@@ -2019,76 +2222,406 @@ H["tileset.apply"] = function(args)
   if op == "list" then
     local out = {}
     for i, ts in ipairs(s.tilesets or {}) do
-      out[i] = { name = ts.name or ("tileset " .. i), tileCount = #ts,
-        tileWidth = ts.grid.tileSize.width, tileHeight = ts.grid.tileSize.height }
+      out[i] = {
+        name = ts.name ~= "" and ts.name or ("tileset " .. i),
+        tileCount = #ts,
+        tileWidth = ts.grid.tileSize.width,
+        tileHeight = ts.grid.tileSize.height,
+      }
     end
     return { sprite = app.fs.fileName(s.filename or ""), op = op, tilesets = out }
   end
 
   if op == "create_layer" then
     local name = args.name or "tilemap"
+    local tw = args.tileWidth or 16
+    local th = args.tileHeight or 16
     transact("AI: new tilemap layer", function()
       preserving_site(function()
         app.sprite = s
-        app.command.NewLayer{ tilemap = true,
-          gridBounds = Rectangle(0, 0, args.tileWidth or 16, args.tileHeight or 16) }
+        app.command.NewLayer{ tilemap = true, gridBounds = Rectangle(0, 0, tw, th) }
         if app.layer then app.layer.name = name end
       end)
     end)
-    return { sprite = app.fs.fileName(s.filename or ""), op = op, layer = name }
+    return {
+      sprite = app.fs.fileName(s.filename or ""), op = op, layer = name,
+      tileWidth = tw, tileHeight = th,
+    }
   end
 
+  ------------------------------------------------------------------------------
+  -- pack: a hand-painted mockup becomes a tileset plus a tilemap that rebuilds it
+  ------------------------------------------------------------------------------
+  if op == "pack" then
+    local source = find_layer(s, args.layer)
+    if source.isTilemap then
+      fault("invalid_args", "'" .. source.name .. "' is already a tilemap. Pack a normal painted layer.")
+    end
+    local frame = find_frame(s, args.frame)
+    local tw = args.tileWidth or 16
+    local th = args.tileHeight or 16
+    local tolerance = args.tolerance or 0
+
+    if s.width % tw ~= 0 or s.height % th ~= 0 then
+      fault("invalid_args", string.format(
+        "Canvas is %dx%d, which is not a whole number of %dx%d tiles. " ..
+        "Resize the canvas to a multiple of the tile size before packing — a partial " ..
+        "edge tile would silently lose pixels.", s.width, s.height, tw, th))
+    end
+
+    -- Render just this layer, so packing a mockup is not polluted by a sketch
+    -- or reference layer sitting above it.
+    local canvas = Image(s.width, s.height, s.colorMode)
+    local src_cel = get_cel(s, source, frame, false)
+    if not src_cel then
+      fault("invalid_args", "'" .. source.name .. "' has no cel on frame " .. frame.frameNumber .. ".")
+    end
+    canvas:drawImage(src_cel.image, src_cel.position)
+
+    local cols = s.width // tw
+    local rows = s.height // th
+
+    -- Index 0 in an Aseprite tileset is the reserved empty tile, so a fully
+    -- transparent cell maps to 0 and costs nothing.
+    local cells = {}
+    local unique = {}      -- ordered list of {image=, key=}
+    local by_key = {}
+    local exact_reuse, fuzzy_reuse = 0, 0
+
+    for row = 0, rows - 1 do
+      for col = 0, cols - 1 do
+        local cell = extract_cell(canvas, col * tw, row * th, tw, th, s.colorMode)
+        local index
+        if cell_is_empty(cell, s) then
+          index = 0
+        else
+          local key = cell_key(cell)
+          local hit = by_key[key]
+          if hit then
+            index = hit
+            exact_reuse = exact_reuse + 1
+          elseif tolerance > 0 then
+            -- Only the slow path scans: exact matches are already resolved.
+            for i, existing in ipairs(unique) do
+              if cell_distance(cell, existing.image) <= tolerance then
+                index = i
+                fuzzy_reuse = fuzzy_reuse + 1
+                break
+              end
+            end
+          end
+          if not index then
+            unique[#unique + 1] = { image = cell, key = key }
+            index = #unique
+            by_key[key] = index
+          end
+        end
+        cells[row * cols + col] = index
+      end
+    end
+
+    local layer_name = args.name or (source.name .. "-tilemap")
+
+    transact("AI: pack tileset", function()
+      preserving_site(function()
+        app.sprite = s
+        app.command.NewLayer{ tilemap = true, gridBounds = Rectangle(0, 0, tw, th) }
+        local tilemap = app.layer
+        tilemap.name = layer_name
+
+        local ts = tilemap.tileset
+        for _, entry in ipairs(unique) do
+          local tile = s:newTile(ts)
+          tile.image = entry.image
+        end
+
+        local spec = ImageSpec{ width = cols, height = rows, colorMode = ColorMode.TILEMAP }
+        local map = Image(spec)
+        for row = 0, rows - 1 do
+          for col = 0, cols - 1 do
+            map:drawPixel(col, row, app.pixelColor.tile(cells[row * cols + col], 0))
+          end
+        end
+        s:newCel(tilemap, frame, map, Point(0, 0))
+
+        -- Keep the mockup, hidden: a wrong tile size is only obvious once you
+        -- compare, and deleting the original makes that impossible.
+        source.isVisible = false
+      end)
+    end)
+
+    return {
+      sprite = app.fs.fileName(s.filename or ""),
+      op = op,
+      layer = layer_name,
+      sourceLayer = source.name,
+      tileWidth = tw, tileHeight = th,
+      columns = cols, rows = rows,
+      cellCount = cols * rows,
+      tileCount = #unique,
+      reusedExact = exact_reuse,
+      reusedFuzzy = fuzzy_reuse,
+    }
+  end
+
+  ------------------------------------------------------------------------------
+  -- everything below needs an existing tilemap layer
+  ------------------------------------------------------------------------------
   local layer = find_layer(s, args.layer)
   if not layer.isTilemap then
-    fault("invalid_args", "'" .. layer.name .. "' is not a tilemap layer. Create one with op 'create_layer'.")
+    fault("invalid_args", "'" .. layer.name .. "' is not a tilemap layer. Create one with op 'create_layer', or build one from a mockup with op 'pack'.")
   end
   local frame = find_frame(s, args.frame)
+  local tileset = layer.tileset
+  if not tileset then fault("invalid_args", "Layer '" .. layer.name .. "' has no tileset.") end
 
   if op == "stamp" then
     local tiles = need(args.tiles, "tiles")
+    local tw = tileset.grid.tileSize.width
+    local th = tileset.grid.tileSize.height
+    local cols = math.max(1, s.width // tw)
+    local rows = math.max(1, s.height // th)
+    local placed, skipped = 0, 0
+
     transact("AI: stamp tiles", function()
-      local cel = get_cel(s, layer, frame, true)
-      local img = cel.image:clone()
+      local cel = layer:cel(frame)
+      local map
+      if cel then
+        map = cel.image:clone()
+      else
+        -- A tilemap cel must be created with a TILEMAP-mode image; the generic
+        -- cel helper would hand back an RGB one and every stamp would be lost.
+        map = Image(ImageSpec{ width = cols, height = rows, colorMode = ColorMode.TILEMAP })
+      end
+
       for _, t in ipairs(tiles) do
-        if t.x >= 0 and t.y >= 0 and t.x < img.width and t.y < img.height then
-          img:drawPixel(t.x, t.y, t.tile)
+        if t.x >= 0 and t.y >= 0 and t.x < map.width and t.y < map.height
+           and t.tile >= 0 and t.tile < #tileset then
+          map:drawPixel(t.x, t.y, app.pixelColor.tile(t.tile, 0))
+          placed = placed + 1
+        else
+          skipped = skipped + 1
         end
       end
-      cel.image = img
+
+      if cel then cel.image = map else s:newCel(layer, frame, map, Point(0, 0)) end
     end)
-    return { sprite = app.fs.fileName(s.filename or ""), op = op, tileCount = #tiles }
+
+    if skipped > 0 and placed == 0 then
+      fault("invalid_args", string.format(
+        "None of the %d tiles could be placed. The grid is %dx%d cells and the tileset has %d tiles (valid indices 0..%d).",
+        #tiles, cols, rows, #tileset, #tileset - 1))
+    end
+
+    return {
+      sprite = app.fs.fileName(s.filename or ""), op = op,
+      layer = layer.name, tileCount = placed, skipped = skipped,
+      columns = cols, rows = rows,
+    }
   end
 
   if op == "get" then
-    local ts = layer.tileset
-    if not ts then fault("invalid_args", "Layer has no tileset.") end
-    local tw, th = ts.grid.tileSize.width, ts.grid.tileSize.height
-    local cols = math.ceil(math.sqrt(#ts))
-    local rows = math.ceil(#ts / cols)
-    local packed = Image(cols * tw, rows * th, s.colorMode)
-    for i = 0, #ts - 1 do
-      local tile = ts:tile(i)
-      if tile and tile.image then
-        packed:drawImage(tile.image, Point((i % cols) * tw, math.floor(i / cols) * th))
-      end
-    end
+    local packed, cols, rows, tw, th = pack_tiles(tileset, s.colorMode, false)
+    local files = {}
     if args.path then
-      preserving_site(function()
-        local out = Sprite(packed.width, packed.height, s.colorMode)
-        if s.colorMode == ColorMode.INDEXED then out:setPalette(s.palettes[1]) end
-        out.cels[1].image = packed
-        local scale = pick_scale(packed.width, packed.height, nil)
-        if scale > 1 then out:resize(packed.width * scale, packed.height * scale) end
-        out:saveCopyAs(args.path)
-        out:close()
-      end)
+      write_image(packed, s.colorMode, s.palettes[1], args.path, pick_scale(packed.width, packed.height, nil))
+      files[#files + 1] = args.path
     end
-    return { sprite = app.fs.fileName(s.filename or ""), op = op, tileCount = #ts,
-      files = args.path and { args.path } or {} }
+    return {
+      sprite = app.fs.fileName(s.filename or ""), op = op,
+      layer = layer.name, tileCount = #tileset,
+      tileWidth = tw, tileHeight = th,
+      columns = cols, rows = rows, files = files,
+    }
   end
 
-  fault("unsupported_command", "tileset op '" .. tostring(op) ..
-    "' is not implemented in this extension build yet.")
+  ------------------------------------------------------------------------------
+  -- export: packed PNG plus the file the target engine reads
+  ------------------------------------------------------------------------------
+  if op == "export" then
+    local path = need(args.path, "path")
+    local format = args.format or "tiled"
+    local layout = args.layout or "grid"
+
+    local packed, cols, rows, tw, th, count = pack_tiles(tileset, s.colorMode, true)
+    if count == 0 then
+      fault("invalid_args", "Tileset '" .. layer.name .. "' has no tiles beyond the empty one; there is nothing to export.")
+    end
+    local base = path:gsub("%.[%w]+$", "")
+    local png_path = base .. ".png"
+    write_image(packed, s.colorMode, s.palettes[1], png_path, 1)
+
+    local name = app.fs.fileTitle(path)
+    local png_name = app.fs.fileName(png_path)
+    local files = { png_path }
+
+    local wangset = nil
+    if layout == "blob47" then
+      local masks = blob47_masks()
+      if #masks ~= 47 then
+        fault("aseprite_error", "blob47 reduction produced " .. #masks .. " masks, not 47; refusing to write a wangset that would autotile wrongly.")
+      end
+      -- Tile 0 is Aseprite's reserved empty tile, so the 47 blob tiles are
+      -- expected at indices 1..47.
+      if #tileset < 48 then
+        fault("invalid_args", string.format(
+          "layout 'blob47' needs 47 tiles after the empty tile (48 total); this tileset has %d. " ..
+          "Either author the full blob47 set in canonical order, or export with layout 'grid'.", #tileset))
+      end
+      local wangtiles = {}
+      for i, mask in ipairs(masks) do
+        -- Two explicit colours rather than 0-as-wildcard: a half-specified
+        -- wangid makes Tiled pick tiles that only sometimes fit.
+        local function bit(b) return (mask & b) ~= 0 and 1 or 2 end
+        wangtiles[i] = {
+          -- Tiled wangtile ids are atlas slots. Aseprite blob tiles live at
+          -- indices 1..47 and the empty tile is dropped from the atlas, so
+          -- slot = index - 1 = i - 1.
+          tileid = i - 1,
+          wangid = { bit(N), bit(NE), bit(E), bit(SE), bit(S), bit(SW), bit(W), bit(NW) },
+        }
+      end
+      wangset = {
+        name = "blob47",
+        type = "mixed",
+        tile = -1,
+        colors = {
+          { color = "#ff0000", name = "terrain", probability = 1, tile = -1 },
+          { color = "#00ff00", name = "empty",   probability = 1, tile = -1 },
+        },
+        wangtiles = wangtiles,
+      }
+    end
+
+    local function write_text(target, text)
+      local handle = io.open(target, "w")
+      if not handle then fault("aseprite_error", "Could not write '" .. target .. "'.") end
+      handle:write(text)
+      handle:close()
+      files[#files + 1] = target
+    end
+
+    if format == "tiled" then
+      local doc = {
+        columns = cols,
+        image = png_name,
+        imagewidth = packed.width,
+        imageheight = packed.height,
+        margin = 0,
+        spacing = 0,
+        name = name,
+        tilecount = count,
+        tilewidth = tw,
+        tileheight = th,
+        type = "tileset",
+        version = "1.10",
+        tiledversion = "1.11.0",
+      }
+      if wangset then doc.wangsets = { wangset } end
+      write_text(base .. ".tsj", encode_json(doc))
+
+      -- The tileset alone is not loadable as a level; emit the map that uses it
+      -- so the export actually round-trips into Tiled.
+      local cel = layer:cel(frame)
+      if cel then
+        local data = {}
+        local map = cel.image
+        for y = 0, map.height - 1 do
+          for x = 0, map.width - 1 do
+            -- gid = firstgid + atlas slot = 1 + (asepriteIndex - 1) = the
+            -- Aseprite index itself, and index 0 stays 0, which Tiled reads as
+            -- an empty cell.
+            data[#data + 1] = app.pixelColor.tileI(map:getPixel(x, y))
+          end
+        end
+        write_text(base .. ".tmj", encode_json({
+          type = "map",
+          version = "1.10",
+          tiledversion = "1.11.0",
+          orientation = "orthogonal",
+          renderorder = "right-down",
+          infinite = false,
+          width = map.width,
+          height = map.height,
+          tilewidth = tw,
+          tileheight = th,
+          nextlayerid = 2,
+          nextobjectid = 1,
+          tilesets = { { firstgid = 1, source = app.fs.fileName(base .. ".tsj") } },
+          layers = { {
+            id = 1, name = layer.name, type = "tilelayer", visible = true, opacity = 1,
+            x = 0, y = 0, width = map.width, height = map.height, data = data,
+          } },
+        }))
+      end
+
+    elseif format == "godot" then
+      -- Godot 4 TileSet with a single atlas source.
+      local out = {
+        '[gd_resource type="TileSet" load_steps=3 format=3]',
+        '',
+        string.format('[ext_resource type="Texture2D" path="res://%s" id="1_atlas"]', png_name),
+        '',
+        '[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_1"]',
+        'texture = ExtResource("1_atlas")',
+        string.format('texture_region_size = Vector2i(%d, %d)', tw, th),
+      }
+      for slot = 0, count - 1 do
+        out[#out + 1] = string.format('%d:%d/0 = 0', slot % cols, slot // cols)
+      end
+      out[#out + 1] = ''
+      out[#out + 1] = '[resource]'
+      out[#out + 1] = string.format('tile_size = Vector2i(%d, %d)', tw, th)
+      out[#out + 1] = 'sources/0 = SubResource("TileSetAtlasSource_1")'
+      out[#out + 1] = ''
+      write_text(base .. ".tres", table.concat(out, "\n"))
+
+    elseif format == "json" then
+      local doc = {
+        name = name,
+        image = png_name,
+        imageWidth = packed.width,
+        imageHeight = packed.height,
+        tileWidth = tw,
+        tileHeight = th,
+        columns = cols,
+        rows = rows,
+        tileCount = count,
+        indexing = "map.tiles holds Aseprite tile indices: 0 means empty, and index N is atlas slot N-1 in the packed image (row-major, `columns` per row).",
+      }
+      if wangset then
+        local masks = blob47_masks()
+        local mapping = {}
+        for i, mask in ipairs(masks) do mapping[i] = { tile = i, mask = mask } end
+        doc.blob47 = mapping
+      end
+      local cel = layer:cel(frame)
+      if cel then
+        local map = cel.image
+        local grid = {}
+        for y = 0, map.height - 1 do
+          for x = 0, map.width - 1 do
+            grid[#grid + 1] = app.pixelColor.tileI(map:getPixel(x, y))
+          end
+        end
+        doc.map = { width = map.width, height = map.height, tiles = grid }
+      end
+      write_text(base .. ".json", encode_json(doc))
+
+    else
+      fault("invalid_args", "Unknown export format '" .. tostring(format) ..
+        "'. Use 'tiled', 'godot' or 'json'.")
+    end
+
+    return {
+      sprite = app.fs.fileName(s.filename or ""), op = op,
+      layer = layer.name, format = format, layout = layout,
+      tileCount = count, tileWidth = tw, tileHeight = th,
+      columns = cols, rows = rows, files = files,
+    }
+  end
+
+  fault("unsupported_command", "tileset op '" .. tostring(op) .. "' is not supported.")
 end
 
 --------------------------------------------------------------------------------
@@ -2250,69 +2783,6 @@ H["lua.run"] = function(args)
   }
 end
 
---------------------------------------------------------------------------------
--- JSON encoding
---
--- Aseprite ships json.decode/json.encode, but its encoder renders an empty Lua
--- table as `{}`, and this protocol has fields the server validates as arrays
--- (colorsSnapped, findings, files…). An empty result would fail schema
--- validation on the far side and turn a successful edit into an error the user
--- sees. Encoding here fixes the rule explicitly: a table is an array unless it
--- has a non-integer key.
---------------------------------------------------------------------------------
-
-local function is_array(t)
-  for k in pairs(t) do
-    if type(k) ~= "number" then return false end
-  end
-  return true
-end
-
-local ESCAPES = {
-  ['"'] = '\\"', ["\\"] = "\\\\", ["\b"] = "\\b", ["\f"] = "\\f",
-  ["\n"] = "\\n", ["\r"] = "\\r", ["\t"] = "\\t",
-}
-
-local function encode_string(s)
-  return '"' .. s:gsub('[%c"\\]', function(c)
-    return ESCAPES[c] or string.format("\\u%04x", c:byte())
-  end) .. '"'
-end
-
-local encode_value
-
-local function encode_table(t, depth)
-  if depth > 24 then return "null" end
-  if is_array(t) then
-    local parts = {}
-    for i = 1, #t do parts[i] = encode_value(t[i], depth + 1) end
-    return "[" .. table.concat(parts, ",") .. "]"
-  end
-  local parts = {}
-  for k, v in pairs(t) do
-    local encoded = encode_value(v, depth + 1)
-    if encoded ~= nil then
-      parts[#parts + 1] = encode_string(tostring(k)) .. ":" .. encoded
-    end
-  end
-  return "{" .. table.concat(parts, ",") .. "}"
-end
-
-encode_value = function(v, depth)
-  local t = type(v)
-  if v == nil then return "null" end
-  if t == "boolean" then return tostring(v) end
-  if t == "string" then return encode_string(v) end
-  if t == "number" then
-    if v ~= v or v == math.huge or v == -math.huge then return "null" end
-    if v == math.floor(v) and math.abs(v) < 2 ^ 53 then return string.format("%d", v) end
-    return string.format("%.6g", v)
-  end
-  if t == "table" then return encode_table(v, depth or 0) end
-  return encode_string(tostring(v))
-end
-
-local function encode_json(v) return encode_value(v, 0) end
 
 --------------------------------------------------------------------------------
 -- Dispatch and transport
@@ -2533,4 +3003,5 @@ _G.AI_ARTIST = {
   encodeJson = encode_json,
   handleCommand = handle_command,
   toPlain = to_plain,
+  blob47Masks = blob47_masks,
 }

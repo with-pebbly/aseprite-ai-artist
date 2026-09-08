@@ -49,20 +49,55 @@ tilesets than authoring tiles in isolation, because you see the whole picture
 while drawing.
 
 1. Paint the mockup on a normal layer, on a canvas that is a whole number of
-   tiles in each direction.
-2. `tileset op="pack"` deduplicates it into a tileset plus a tilemap that
-   reconstructs the original.
-3. Check the tile count. A mockup that yields 200 tiles was painted without
-   regard to the grid; redraw with the grid visible.
+   tiles in each direction. `pack` refuses otherwise rather than silently
+   losing a partial edge tile.
+2. Pack it:
+   ```
+   tileset op="pack" layer="mockup" name="terrain" tileWidth=16 tileHeight=16
+   ```
+   You get a tileset plus a tilemap layer that reconstructs the mockup exactly.
+   The mockup is **hidden, not deleted** — unhide it to compare if a tile looks
+   wrong.
+3. Read the result. `cellCount` against `tileCount` tells you how much the
+   mockup actually reused. A 400-cell mockup that yields 300 tiles was painted
+   without regard to the grid; the tool says so, and the fix is to redraw with
+   the grid visible, not to accept it.
+4. `tolerance` merges near-identical cells (per-channel difference, 0–255). It
+   is off by default because a merge changes the art: the tilemap becomes an
+   approximation of the mockup rather than a copy, and the result says how many
+   cells that affected.
 
 ## Export
+
+```
+tileset op="export" layer="terrain" format="tiled" path="…/terrain.tsj"
+```
+
+Writes three files: the packed PNG, the `.tsj` tileset, and a `.tmj` map that
+uses it — so the export opens in Tiled as a level, not just an image.
+
+- `format="godot"` writes a Godot 4 `TileSet` resource (`.tres`).
+- `format="json"` writes the tile grid plus the tilemap layout, for a custom
+  engine. It states its own index convention in the file.
+- LDtk needs no exporter — it reads `.aseprite` directly, so just save the
+  document.
+
+Aseprite reserves tile index 0 for the empty tile. The exporter drops it from
+the atlas so engine indices line up, and index 0 becomes "no tile", which is
+what every engine expects.
+
+## Autotiling
 
 ```
 tileset op="export" format="tiled" layout="blob47" path="…/terrain.tsj"
 ```
 
-Writes the engine file plus the packed PNG beside it. Godot uses `format:
-"godot"`. LDtk reads `.aseprite` directly — just save the document.
+Adds a Tiled wangset for 4-connected autotiling. It assumes the 47 tiles are
+authored in **canonical blob47 order** — the 47 distinct neighbour masks in
+ascending order, after Aseprite's empty tile — and refuses if the set is
+incomplete rather than writing a wangset that autotiles wrongly. If you are not
+sure of the ordering, export `format="json"` first: it reports the
+index-to-mask mapping so you can check a few tiles by eye.
 
 ## Related
 
