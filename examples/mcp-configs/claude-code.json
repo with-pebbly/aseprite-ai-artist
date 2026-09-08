@@ -1,0 +1,9 @@
+{
+  "//": "Claude Code — user scope goes in ~/.claude.json, project scope in .mcp.json. Prefer installing the plugin instead: /plugin marketplace add with-pebbly/aseprite-ai-artist",
+  "mcpServers": {
+    "aseprite-ai-artist": {
+      "command": "npx",
+      "args": ["-y", "@with-pebbly/aseprite-ai-artist@latest", "serve"]
+    }
+  }
+}

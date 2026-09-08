@@ -1,0 +1,16 @@
+{
+  "name": "aseprite-ai-artist",
+  "displayName": "Aseprite AI Artist",
+  "description": "Agent-native control layer for Aseprite: live drawing over MCP, an encoded pixel-art rulebook, /pixel-* workflows and specialist subagents.",
+  "owner": {
+    "name": "with-pebbly",
+    "url": "https://github.com/with-pebbly"
+  },
+  "plugins": [
+    {
+      "name": "aseprite-ai-artist",
+      "source": "./",
+      "description": "Draw pixel art in a live Aseprite window: compact MCP tool surface, pixel-art rules, /pixel-* skills, review/palette/rig/animation agents."
+    }
+  ]
+}

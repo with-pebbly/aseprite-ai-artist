@@ -1,0 +1,9 @@
+{
+  "//": "Cursor — ~/.cursor/mcp.json for user scope, .cursor/mcp.json for a project.",
+  "mcpServers": {
+    "aseprite-ai-artist": {
+      "command": "npx",
+      "args": ["-y", "@with-pebbly/aseprite-ai-artist@latest", "serve"]
+    }
+  }
+}

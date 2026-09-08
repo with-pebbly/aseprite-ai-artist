@@ -1,0 +1,10 @@
+{
+  "//": "VS Code — .vscode/mcp.json. Note the key is `servers`, not `mcpServers`, and the transport is explicit.",
+  "servers": {
+    "aseprite-ai-artist": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@with-pebbly/aseprite-ai-artist@latest", "serve"]
+    }
+  }
+}

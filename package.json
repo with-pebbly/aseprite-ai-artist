@@ -1,0 +1,69 @@
+{
+  "name": "@with-pebbly/aseprite-ai-artist",
+  "version": "0.1.0",
+  "description": "Agent-native control layer for Aseprite. MCP server (2026-07-28 spec) + cross-agent skills for Claude Code, Codex, Gemini CLI and Cursor.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "bin": {
+    "aseprite-ai-artist": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "extension",
+    "skills",
+    "rules",
+    "agents",
+    "hooks",
+    "knowledge",
+    "templates",
+    "examples",
+    "bin",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/with-pebbly/aseprite-ai-artist.git"
+  },
+  "homepage": "https://github.com/with-pebbly/aseprite-ai-artist#readme",
+  "bugs": "https://github.com/with-pebbly/aseprite-ai-artist/issues",
+  "keywords": [
+    "aseprite",
+    "pixel-art",
+    "mcp",
+    "model-context-protocol",
+    "sprites",
+    "animation",
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "cursor"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --experimental-strip-types tests/color.test.ts tests/render.test.ts tests/bridge.test.ts tests/server.test.ts",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run clean && npm run build",
+    "test:extension": "aseprite -b --script-param root=. --script tests/extension.test.lua",
+    "test:e2e": "node tests/e2e.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "ws": "^8.21.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.2"
+  }
+}

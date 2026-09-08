@@ -1,0 +1,9 @@
+{
+  "//": "Gemini CLI — ~/.gemini/settings.json for user scope, .gemini/settings.json for a project.",
+  "mcpServers": {
+    "aseprite-ai-artist": {
+      "command": "npx",
+      "args": ["-y", "@with-pebbly/aseprite-ai-artist@latest", "serve"]
+    }
+  }
+}

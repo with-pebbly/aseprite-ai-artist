@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typescript:
+    name: TypeScript (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+
+  lua-syntax:
+    name: Lua syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.4"
+      # The extension cannot run outside Aseprite, but a parse error would break
+      # every user's install, so at minimum it must compile.
+      - run: luac -p extension/ai-artist.lua tests/extension.test.lua
+
+  package:
+    name: Package contents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # The published tarball must carry the extension, skills and rules — the
+      # server is useless without them and a missing `files` entry is silent.
+      - name: Assert the tarball ships its content
+        run: |
+          npm pack --dry-run --json > pack.json
+          node -e "
+            const files = require('./pack.json')[0].files.map(f => f.path);
+            const required = [
+              'extension/ai-artist.lua',
+              'extension/package.json',
+              'knowledge/palettes.json',
+              'skills/pixel-draw/SKILL.md',
+              'rules/00-core-principles.md',
+              'templates/AGENTS.section.md',
+              'dist/cli.js',
+            ];
+            const missing = required.filter(r => !files.includes(r));
+            if (missing.length) { console.error('missing from package:', missing); process.exit(1); }
+            console.log('package carries all required content (' + files.length + ' files)');
+          "
