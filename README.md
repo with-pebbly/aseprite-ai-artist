@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/media/hero3.gif" alt="A pixel robot paints a landscape on an easel: sky, then hill, then the sun, which lights the room" width="768">
+
 # Aseprite AI Artist
 
 **Let a coding agent draw pixel art in your open Aseprite window** — not in a
@@ -8,6 +10,11 @@ copy, not on disk, in the document you are looking at.
 [![npm](https://img.shields.io/npm/v/@pebbly/aseprite-ai-artist?color=%23e07a3f&label=npm)](https://www.npmjs.com/package/@pebbly/aseprite-ai-artist)
 [![CI](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml/badge.svg)](https://github.com/with-pebbly/aseprite-ai-artist/actions/workflows/ci.yml)
 [![licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
+
+*192×96, 36 frames, one palette, drawn through this server into a live Aseprite
+window. The brush tip is where the paint appears, every frame: sky first, then
+the hill, then the sun — and when it catches, it lights the floor and the robot
+that painted it.*
 
 </div>
 
