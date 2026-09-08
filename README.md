@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/media/hero3.gif" alt="A pixel robot paints a landscape on an easel: sky, then hill, then the sun, which lights the room" width="768">
+<img src="docs/media/hero2.gif" alt="A pixel robot at an easel paints a landscape stroke by stroke under a pendant lamp: sky, sun, hills, then a signature" width="768">
 
 # Aseprite AI Artist
 
@@ -12,9 +12,9 @@ copy, not on disk, in the document you are looking at.
 [![licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 *192×96, 36 frames, one palette, drawn through this server into a live Aseprite
-window. The brush tip is where the paint appears, every frame: sky first, then
-the hill, then the sun — and when it catches, it lights the floor and the robot
-that painted it.*
+window. The brush tip is where the paint appears, every frame: the sky goes on
+in passes, then the sun, then the hills, then a signature in the corner — and
+once the sun is lit it warms the frame, the floor and the robot that painted it.*
 
 </div>
 
@@ -117,29 +117,43 @@ to fetch it rather than being handed a menu of `/pixel-*` commands. What Claude
 Code alone gets is the ergonomics and one thing of real substance: the hook that
 nudges the agent to **look** at what it just drew, and the specialist subagents,
 including a critic that reviews with its own fresh context. Elsewhere that
-critique has to come from you — which is exactly how the animation at the top of
-this page was made: Codex drew, a reviewer picked it apart, three times.
+critique has to come from you — which is exactly how the harbour at the foot of
+this page was made: Codex drew, a reviewer picked it apart, five times.
 
-**Drawing ability** — hands-on impression rather than a benchmark, and the part
-that surprises people:
+**Drawing ability** — this is not a benchmark. It is a log of what actually drew
+the art on this page, kept honest: every row is a model we watched work on a
+real brief through this server, and models we have not run are listed as such
+rather than guessed at.
 
-- **Reasoning effort matters more than you would expect.** Placing pixels on a
-  32×32 grid is a spatial problem: the model has to hold a coordinate frame in
-  its head, keep a silhouette readable at that size, and notice when a shape has
-  gone wrong. Turn reasoning up before you blame the tool.
-- **Codex CLI on a high-reasoning setting is the best drawer we have used** — it
-  drew the animation at the top of this page and the mascot below, working from
-  a brief and the rulebook alone.
+| Model (as we ran it) | What it drew here | How it went |
+|---|---|---|
+| **Claude Fable 5.1**<br>`claude --model fable` | the hero animation at the top | **Best result so far.** One session, ~80 min, no review passes from us. Rebuilt the scene on eight layers and solved the arm by inverse kinematics from the brush tip, which is why the brush touches the canvas in all 36 frames. |
+| **Codex CLI, `gpt-5.6-terra`**<br>`model_reasoning_effort = "high"` | the harbour at the foot of this page, and the mascot | Strong, but it took five review passes: the pier read as fallen scaffolding, the beam lay across the roofs like a bar, windows sat on the wrong houses. |
+| **Claude Opus 5** | this server, the rulebook, the briefs and every review pass | The planner and the critic, not the illustrator. Its own attempt at the hero was scrapped and redrawn by Fable. Palette work, rig layout, animation timing and catching another model's mistakes are where it earns its place. |
+| Gemini 3 Pro, Claude Sonnet 5, Cursor, everything else | — | **Not tested.** If you run one against a real brief, a PR with the sprite is welcome. |
 
-  <img src="docs/media/mascot.png" alt="The mascot" width="96">
+<div align="center">
+<img src="docs/media/mascot.png" alt="The mascot" width="96"><br>
+<sub><i>the mascot, Codex CLI, from the brief and the rulebook alone</i></sub>
+</div>
 
-- **Claude Code is the better planner and critic.** Palette construction, rig
-  layout, animation timing and the review pass come out noticeably stronger;
-  raw pixel placement at small canvas sizes is weaker.
-- If you have both, split the work: brief and review in Claude Code with
-  `pixel-brief` and `pixel-review`, execute the drawing passes in Codex. They
-  talk to the same live document through the same bridge, so they can take turns
-  on one sprite.
+**What actually made the difference was method, not model.** Both good results
+came the same way, and it is a technique you can hand to any client:
+
+- **Generate, don't hand-place.** The two scenes that worked were written as a
+  small program that emits every frame — a coordinate model, a palette, a
+  schedule of what appears when — and only then pushed through `draw`. Placing
+  pixels one call at a time by eye is where the weaker attempts died.
+- **Look at full-size frames, one at a time.** A filmstrip is a trap: at that
+  size you see what you know is meant to be there. Every defect we shipped and
+  had to fix was invisible in the strip and obvious at 1:1.
+- **Turn reasoning up before you blame the model.** A 32×32 grid is a spatial
+  problem — hold a coordinate frame, keep a silhouette readable, notice when a
+  shape has gone wrong.
+- **Split the roles if you have two clients.** Brief and review in Claude Code
+  with `pixel-brief` and `pixel-review`, execute the drawing passes in whichever
+  model draws best. They talk to the same live document through the same bridge,
+  so they can take turns on one sprite.
 
 The rulebook narrows the gap a long way — an agent that never reads a word of it
 still cannot casually widen your palette, because `draw` and `recolor` snap by
