@@ -149,7 +149,12 @@ export function registerCraftTools(server: McpServer, live: LiveClient): void {
             at: { x: number; y: number } | null;
             count: number | null;
           }[];
-        }>("validate.run", args);
+          // A thorough pass reads every pixel of every visible cel and its four
+          // neighbours. On a large rigged sprite that is tens of millions of
+          // reads and legitimately outruns the default budget — the failure
+          // then reads as "Aseprite is not answering", which is the one message
+          // that makes an agent go looking for a workaround.
+        }>("validate.run", args, { expect: ["findings"], timeoutMs: 120_000 });
 
         const errors = data.findings.filter((f) => f.severity === "error");
         const warnings = data.findings.filter((f) => f.severity === "warning");

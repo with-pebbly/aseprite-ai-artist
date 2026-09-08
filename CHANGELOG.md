@@ -4,6 +4,48 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is
 [semver](https://semver.org/).
 
+## [0.1.5] — 2026-09-09
+
+Three commands reported success while doing nothing. That is worse than an
+error: the agent believes the edit landed and builds the next step on top of it.
+All three surfaced while drawing a 35-layer scene through the bridge, none of
+them from a crash.
+
+### Fixed
+
+- **`layer` op `group` could never have worked.** It called
+  `Sprite:newGroupLayer()`, which is not in the Aseprite API. Indexing a missing
+  field throws rather than returning nil, so the whole batch — every other op in
+  it included — rolled back with `Field newGroupLayer does not exist`. The
+  method is `newGroup()`.
+- **`cel` op `link` linked nothing and counted everything.** `LinkCels` acts on
+  the timeline range, not on the active layer and frame; the old code set those
+  and called the command once per target frame, which is a no-op, then reported
+  one success per frame. A caller was told a static layer had been shared across
+  a cycle while the target frames were still empty. The range now holds the
+  source cel and every target together in one call, the reply counts only frames
+  that actually ended up sharing the source image, and linking from a frame with
+  no cel is now an error naming `copy` as the way to seed one.
+- **`validate` timed out on a large sprite.** Its stray and outline scans asked
+  `pixel_to_hex` — a `string.format` — whether a pixel was opaque, for every
+  pixel and each of its four neighbours: tens of millions of strings allocated
+  to compute a boolean. Presence is now answered without allocating. Measured on
+  the 35-layer, 36-frame sprite this was found on, the stray scan went from
+  10.5s to 2.2s and found the identical 1373 strays.
+
+### Changed
+
+- **The per-pixel checks skip hidden layers**, as `outline` and `banding`
+  already did. A finding about pixels that never reach the export is noise, and
+  a document that keeps its earlier drafts as hidden layers is mostly hidden —
+  on the sprite above, 769 of 1042 cels. `validate` now says how many layers it
+  passed over, so a clean result cannot quietly mean "clean, because I did not
+  look".
+- `validate.run` gets its own 120s budget rather than the shared 20s default. A
+  thorough pass over a rigged sprite is legitimately slow, and a timeout reads
+  to an agent as "Aseprite is not answering" — the one message that sends it
+  looking for a workaround.
+
 ## [0.1.4] — 2026-09-08
 
 ### Fixed

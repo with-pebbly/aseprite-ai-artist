@@ -15,7 +15,7 @@
 --------------------------------------------------------------------------------
 
 local PROTOCOL_VERSION = 1
-local EXTENSION_VERSION = "0.1.4"
+local EXTENSION_VERSION = "0.1.5"
 
 -- Optional capabilities. The wire version stays 1 across builds; new command
 -- families are gated on these flags plus the loud unsupported_command reply,
@@ -103,6 +103,21 @@ local function pixel_to_hex(sprite, value)
     end
     return string.format("#%02x%02x%02x%02x", pc.rgbaR(value), pc.rgbaG(value), pc.rgbaB(value), a)
   end
+end
+
+-- "Is there paint here?" without asking which colour. The scans in validate
+-- test presence far more often than they read a colour — every opaque pixel
+-- plus its four neighbours — and pixel_to_hex answers with a string.format,
+-- so it allocated tens of millions of strings to compute a boolean.
+local function pixel_is_opaque(sprite, value)
+  local pc = app.pixelColor
+  if sprite.colorMode == ColorMode.INDEXED then
+    if value == sprite.transparentColor then return false end
+    return value < #sprite.palettes[1]
+  elseif sprite.colorMode == ColorMode.GRAY then
+    return pc.grayaA(value) ~= 0
+  end
+  return pc.rgbaA(value) ~= 0
 end
 
 -- Convert a Color into the raw pixel value this sprite's colour mode stores.
@@ -1576,21 +1591,42 @@ H["cel.apply"] = function(args)
       s:newCel(dstLayer, dstFrame, src.image:clone(), src.position)
       applied = 1
     elseif op == "link" then
-      -- FIXME(cel-link): LinkCels acts on the selected cel range, so it does
-      -- nothing for a frame that has no cel yet — and `applied` is incremented
-      -- regardless, so the reply claims work that never happened. Callers that
-      -- want a static layer across frames have to use draw 'blit' per frame
-      -- instead. Count only frames that gained a linked cel, and fault when a
-      -- target frame is empty.
-      local frames = args.frames or {}
+      -- LinkCels acts on the timeline range, not on app.layer/app.frame. The
+      -- previous version set those and called the command once per frame, which
+      -- linked nothing at all — and still counted one success per frame, so a
+      -- caller was told a static layer had been shared across a cycle when the
+      -- target frames were still empty. The range has to hold the source cel
+      -- and every target together, in one call.
+      local targets = args.frames or {}
+      if #targets == 0 then
+        fault("invalid_args", "cel op 'link' needs 'frames' — the frames to share this cel with.")
+      end
+      local source = get_cel(s, layer, frame, false)
+      if not source then
+        fault("invalid_args", "No cel on '" .. layer.name .. "' frame " .. frame.frameNumber ..
+          " to link from. Draw it there first, or use op 'copy'.")
+      end
+
+      local numbers = { frame.frameNumber }
+      for _, n in ipairs(targets) do numbers[#numbers + 1] = find_frame(s, n).frameNumber end
+
       preserving_site(function()
-        app.layer = layer
-        for _, n in ipairs(frames) do
-          app.frame = find_frame(s, n)
-          app.command.LinkCels()
-          applied = applied + 1
-        end
+        app.sprite = s
+        app.range.layers = { layer }
+        app.range.frames = numbers
+        app.command.LinkCels()
+        pcall(function() app.range:clear() end)
       end)
+
+      -- Count what happened rather than what was asked for: linking replaces
+      -- the shared image, so a target counts only if it now holds the same
+      -- image object as the source does afterwards.
+      local shared = layer:cel(frame)
+      local id = shared and shared.image.id
+      for _, n in ipairs(targets) do
+        local c = layer:cel(find_frame(s, n))
+        if c and id and c.image.id == id then applied = applied + 1 end
+      end
     elseif op == "unlink" then
       preserving_site(function()
         app.layer = layer; app.frame = frame; app.command.UnlinkCel(); applied = 1
@@ -2920,6 +2956,13 @@ H["validate.run"] = function(args)
     end
   end
 
+  -- Hidden layers are skipped by the per-pixel scans, the way outline and
+  -- banding already skipped them: a finding about pixels that do not reach the
+  -- export is noise, and a document that keeps its earlier drafts around as
+  -- hidden layers is mostly hidden — on the sprite this was measured against,
+  -- 769 of 1042 cels, which is where the 20s budget went.
+  local hidden_skipped = 0
+
   for _, layer in ipairs(s.layers) do
     if not layer.isGroup then
       if wanted.layers and #layer.cels == 0 then
@@ -2927,22 +2970,24 @@ H["validate.run"] = function(args)
           "Layer '" .. layer.name .. "' has no cels on any frame.", { layer = layer.name })
       end
 
+      if not layer.isVisible then hidden_skipped = hidden_skipped + 1 end
+
       for _, cel in ipairs(layer.cels) do
         local img = cel.image
 
-        if wanted.strays then
+        if wanted.strays and layer.isVisible then
           -- A lone opaque pixel with no opaque neighbour is nearly always a
           -- misplaced click or an off-by-one in generated coordinates.
           local strays = 0
           local first = nil
           for y = 0, img.height - 1 do
             for x = 0, img.width - 1 do
-              if pixel_to_hex(s, img:getPixel(x, y)) then
+              if pixel_is_opaque(s, img:getPixel(x, y)) then
                 local neighbours = 0
                 for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
                   local nx, ny = x + d[1], y + d[2]
                   if nx >= 0 and ny >= 0 and nx < img.width and ny < img.height
-                     and pixel_to_hex(s, img:getPixel(nx, ny)) then neighbours = neighbours + 1 end
+                     and pixel_is_opaque(s, img:getPixel(nx, ny)) then neighbours = neighbours + 1 end
                 end
                 if neighbours == 0 then
                   strays = strays + 1
@@ -2959,7 +3004,7 @@ H["validate.run"] = function(args)
           end
         end
 
-        if wanted.antialiasing and s.colorMode ~= ColorMode.INDEXED then
+        if wanted.antialiasing and layer.isVisible and s.colorMode ~= ColorMode.INDEXED then
           local semi = 0
           for y = 0, img.height - 1 do
             for x = 0, img.width - 1 do
@@ -2998,7 +3043,7 @@ H["validate.run"] = function(args)
                   for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
                     local nx, ny = x + d[1], y + d[2]
                     if nx < 0 or ny < 0 or nx >= img.width or ny >= img.height
-                       or pixel_to_hex(s, img:getPixel(nx, ny)) == nil then exposed = true end
+                       or not pixel_is_opaque(s, img:getPixel(nx, ny)) then exposed = true end
                   end
                   if exposed then
                     total = total + 1
@@ -3092,6 +3137,15 @@ H["validate.run"] = function(args)
       add_finding(findings, "export_readiness", "warning",
         "Sprite has never been saved, so there is nothing on disk to hand to a game project.")
     end
+  end
+
+  -- Say what was not looked at, rather than letting a clean result imply the
+  -- whole document was checked.
+  if hidden_skipped > 0 then
+    add_finding(findings, "layers", "note",
+      hidden_skipped .. " hidden layer(s) were not scanned for strays, outline, banding or " ..
+      "antialiasing — those checks describe what the sprite shows. Make a layer visible to include it.",
+      { count = hidden_skipped })
   end
 
   return { sprite = sprite_display_name(s), findings = findings }

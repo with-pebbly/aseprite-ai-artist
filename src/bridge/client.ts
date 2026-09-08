@@ -143,10 +143,10 @@ export class LiveClient {
    */
   // TODO(boundary): only the call sites whose fields feed a summary or a
   // decision declare `expect` — draw.batch, recolor.apply, export.run,
-  // session.site, sprite.info. The rest (select, transform, reference, tileset,
-  // look, palette) still rest on `call<T>` alone. Extend as each is checked
-  // against a real reply; guessing a field name here turns a working path into
-  // a hard error.
+  // session.site, sprite.info, validate.run. The rest (select, transform,
+  // reference, tileset, look, palette) still rest on `call<T>` alone. Extend as
+  // each is checked against a real reply; guessing a field name here turns a
+  // working path into a hard error.
   async call<T = unknown>(
     cmd: string,
     args: Record<string, unknown> = {},

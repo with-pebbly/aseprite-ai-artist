@@ -1159,6 +1159,92 @@ check("exporting a gif leaves the source sprite untouched", function()
   os.remove(out)
 end)
 
+-- Regressions from 0.1.5. Each of these shipped as a command that reported
+-- success while doing nothing, which is worse than an error: the agent moves on.
+
+check("layer op 'group' makes a real group and adopts the named layers", function()
+  withMockSprite(8, 8, ColorMode.RGB, function(mock)
+    call("layer.apply", { batch = { { op = "create", name = "arm" } } })
+    call("layer.apply", { batch = { { op = "group", name = "rig", names = { "arm" } } } })
+
+    local group, child = nil, nil
+    for _, l in ipairs(mock.layers) do
+      if l.name == "rig" then group = l end
+    end
+    assert(group, "group layer was not created")
+    assert(group.isGroup, "'rig' is not a group")
+    for _, l in ipairs(group.layers) do
+      if l.name == "arm" then child = l end
+    end
+    assert(child, "'arm' was not reparented into the group")
+  end)
+end)
+
+check("cel op 'link' shares one image and counts only what it linked", function()
+  withMockSprite(8, 8, ColorMode.RGB, function(mock)
+    call("frame.apply", { op = "add", count = 3 })
+    -- 'add' leaves the new frame active, so the frame has to be named or the
+    -- paint lands on frame 4 and the whole test measures an empty cel.
+    call("draw.batch", {
+      frame = 1,
+      ops = { { kind = "rect", rect = { x = 1, y = 1, width = 3, height = 3 }, fill = "#ff004d" } },
+    })
+
+    local layer = mock.layers[1]
+    assert(layer:cel(4) == nil, "precondition: frame 4 starts empty")
+
+    local result = call("cel.apply", { op = "link", layer = layer.name, frame = 1, frames = { 2, 3 } })
+    assertEq(result.applied, 2, "linked count")
+
+    local id = layer:cel(1).image.id
+    assertEq(layer:cel(2).image.id, id, "frame 2 shares the source image")
+    assertEq(layer:cel(3).image.id, id, "frame 3 shares the source image")
+    assert(layer:cel(2).image:getPixel(2, 2) ~= 0, "the shared image is empty, so nothing real was linked")
+    assert(layer:cel(4) == nil, "a frame outside 'frames' was linked anyway")
+  end)
+end)
+
+check("cel op 'link' refuses a source frame that holds no cel", function()
+  withMockSprite(8, 8, ColorMode.RGB, function(mock)
+    call("frame.apply", { op = "add", count = 2 })
+    local layer = mock.layers[1]
+    assert(layer:cel(2) == nil, "precondition: frame 2 starts empty")
+    local ok = pcall(function()
+      call("cel.apply", { op = "link", layer = layer.name, frame = 2, frames = { 3 } })
+    end)
+    assert(not ok, "linking from an empty frame reported success")
+  end)
+end)
+
+check("validate skips hidden layers and says that it did", function()
+  withMockSprite(16, 16, ColorMode.RGB, function(mock)
+    call("layer.apply", { batch = { { op = "create", name = "draft" } } })
+    -- One isolated pixel: a stray by the check's own definition.
+    call("draw.batch", {
+      layer = "draft",
+      ops = { { kind = "rect", rect = { x = 8, y = 8, width = 1, height = 1 }, fill = "#ff004d" } },
+    })
+
+    local seen = call("validate.run", { checks = { "strays" } })
+    local before = 0
+    for _, f in ipairs(seen.findings) do
+      if f.check == "strays" then before = before + 1 end
+    end
+    assert(before > 0, "the stray on a visible layer was not found")
+
+    call("layer.apply", { batch = { { op = "set", name = "draft", visible = false } } })
+
+    local after = call("validate.run", { checks = { "strays", "layers" } })
+    local strays, noted = 0, false
+    for _, f in ipairs(after.findings) do
+      if f.check == "strays" then strays = strays + 1 end
+      if f.message:find("hidden layer") then noted = true end
+    end
+    assertEq(strays, 0, "a hidden layer was still scanned for strays")
+    assert(noted, "validate did not report that it skipped a hidden layer")
+  end)
+end)
+
 sprite:close()
 
 print("")
