@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.8.3] — 2026-11-09
+
 ### Changed
 
 - CI now builds Aseprite 1.3.17's CLI variant from source (cached) and runs
