@@ -7,6 +7,13 @@ tools:
   - Read
   - Glob
   - Grep
+  - mcp__plugin_aseprite_aseprite__preflight
+  - mcp__plugin_aseprite_aseprite__sprite_info
+  - mcp__plugin_aseprite_aseprite__look
+  - mcp__plugin_aseprite_aseprite__validate
+  - mcp__plugin_aseprite_aseprite__read_pixels
+  - ListMcpResourcesTool
+  - ReadMcpResourceTool
 disallowedTools:
   - Write
   - Edit
@@ -36,10 +43,10 @@ critiques written to be easy to fix rather than true.
 6. `look` op `filmstrip` if there is more than one frame, then `look` op `onion`
    on any in-between that looked like it jumped — ghosted neighbours show a limb
    changing length or spacing that snaps instead of easing.
-7. If a reference layer exists (`reference op="list"`), `look` op `compare` on
-   each key frame. Report the largest mismatches with the reference as
-   findings — unless the brief or PixelSpec you were given lists them as
-   deliberate deviations.
+7. If `sprite_info` lists a layer whose name starts with `reference`, `look`
+   op `compare` on each key frame with that layer as `reference`. Report the
+   largest mismatches with the reference as findings — unless the brief or
+   PixelSpec you were given lists them as deliberate deviations.
 8. **Animation: look at key frames one by one, at full zoom** — `look` op
    `preview` with `frame=`: the first, the last, the hold frames, and every
    frame where a moving object is at its largest or smallest. A filmstrip

@@ -11,6 +11,9 @@ All notable changes to this project are documented here. Format follows
 - CI now builds Aseprite 1.3.17's CLI variant from source (cached) and runs
   the headless Lua handler suite, which previously ran only on a developer's
   machine; a handler regression now fails the pipeline.
+- `studio` asks whether to run more fix rounds when its three run out with a
+  BLOCKING finding still standing or a score under 7/10, instead of stopping
+  silently; a headless or batch run stops and says so in the report.
 
 ### Fixed
 
@@ -21,6 +24,13 @@ All notable changes to this project are documented here. Format follows
   outdated extension that lacks the fields they summarise, with an
   `install-extension` hint, instead of reporting `undefined` or an empty
   palette as if the call worked.
+- **`pixel-critic` can see the sprite in Claude Code** (#10). Its `tools:`
+  list named only `Read`, `Glob` and `Grep`, and an explicit list replaces
+  inheritance, so it could not call `preflight`, `look`, `sprite_info`,
+  `validate` or `read_pixels`, nor read `rules://` — it answered "NOT
+  REVIEWED" or judged exported PNGs. Those read-only tools are now listed; the
+  reference-layer check reads layer names from `sprite_info` instead of
+  `reference op="list"`, which would have given it a tool that mutates.
 
 ## [0.8.2] — 2026-10-12
 
