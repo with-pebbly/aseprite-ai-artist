@@ -101,6 +101,11 @@ workflow it names and follow that — do not do the step from memory.
      Keep the fix only if it picks the new one; otherwise restore. Two
      rounds in a row that the comparison rejects end the loop.
 
+   If the three rounds run out while a BLOCKING finding remains or the last
+   critique scored under 7/10, do not stop silently: report the finding that
+   is still standing and ask the user whether to run more rounds. In a
+   headless or batch run with no one to ask, stop and say so in the report.
+
    Do not change pixels after the last critique; anything you edit afterwards
    goes back to the critic. A critique whose cold read did not name your
    subject is the most important finding you will get: the picture does not
