@@ -75,7 +75,7 @@ export function registerLookTools(server: McpServer, live: AsepriteLink): void {
           .boolean()
           .default(true)
           .describe(
-            "ascii: false drops the coordinate rulers and row labels, leaving rows you can edit and pass straight to `draw` kind 'grid' with the reported origin.",
+            "ascii: false drops the coordinate rulers and row labels and returns `gridRows` instead of `text`: rows you can edit and pass straight to `draw` kind 'grid' with the reported origin.",
           ),
         scale: z
           .number()
@@ -93,7 +93,7 @@ export function registerLookTools(server: McpServer, live: AsepriteLink): void {
         width: z.number().int(),
         height: z.number().int(),
         scale: z.number().int().optional(),
-        text: z.string().optional().describe("The grid, for 'ascii' and 'diff'."),
+        text: z.string().optional().describe("The grid: 'ascii' with rulers (the default), and 'diff'."),
         legend: z.record(z.string()).optional().describe("glyph → #rrggbb. Palette colours keep the same glyph across every read of the sprite."),
         offPalette: z
           .array(z.string())
@@ -102,7 +102,7 @@ export function registerLookTools(server: McpServer, live: AsepriteLink): void {
         gridRows: z
           .array(z.string())
           .optional()
-          .describe("ascii: the bare rows, '.' transparent — `draw` kind 'grid' `rows`, with `legend` and `origin`."),
+          .describe("ascii with rulers=false: the bare rows, '.' transparent — `draw` kind 'grid' `rows`, with `legend` and `origin`."),
         origin: z
           .object({ x: z.number().int(), y: z.number().int() })
           .optional()
@@ -133,10 +133,13 @@ export function registerLookTools(server: McpServer, live: AsepriteLink): void {
                 sprite: region.spriteName,
                 width: view.width,
                 height: view.height,
-                text: view.text,
+                // One copy of the grid, not two: with rulers the ruled text is what
+                // a reader counts against; without them the bare rows are what
+                // `draw` kind 'grid' takes back. Sending both doubled every read
+                // for clients that hand the model structuredContent.
+                ...(args.rulers === false ? { gridRows: view.rows } : { text: view.text }),
                 legend: view.legend,
                 offPalette: view.offPalette,
-                gridRows: view.rows,
                 origin: { x: view.originX, y: view.originY },
               },
               `${view.width}×${view.height} at (${view.originX},${view.originY})\n\n${view.text}\n\nLegend: ${formatLegend(view.legend)}\n'.' = transparent${offPaletteNote(view.offPalette)}`,
