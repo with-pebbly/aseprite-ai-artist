@@ -83,11 +83,11 @@ workflow it names and follow that — do not do the step from memory.
    - **Snapshot before you touch it.** `export op="png"` the current frame (or
      `op="gif"` for an animation) to a scratch path, and keep an exact copy of
      every layer you will change — `export op="aseprite"` to a scratch path,
-     or the layer's rows from `look op="ascii"`. Restoring means writing those
+     or the layer's rows from `look op="ascii" rulers=false`. Restoring means writing those
      rows back as a `grid` at the same x/y, or opening the copy and
      `layer op="duplicate" toSprite=<document>`.
    - **Fix, don't redraw.** A fix changes the pixels the finding points at —
-     read that region with `look op="ascii"`, change those rows, write them
+     read that region with `look op="ascii" rulers=false`, change those rows, write them
      back as a `grid` — or recolours a mass that is too dark (`recolor`). If
      the round changed more than about a quarter of a layer's opaque pixels,
      it was a redraw: restore the snapshot and make the smaller fix. Never
