@@ -263,6 +263,18 @@ test("draw measureOnly rejects a batch that mixes a non-text op", async () => {
   await close();
 });
 
+test("a grid op with both or neither of rows and file is refused before Aseprite is asked", async () => {
+  const { client, close } = await connected();
+  const legend = { A: "#ffffff" };
+  for (const grid of [{ rows: ["A"], file: "g.txt" }, {}]) {
+    const result = await client.callTool({ name: "draw", arguments: { ops: [{ kind: "grid", x: 0, y: 0, legend, ...grid }] } });
+    assert.equal(result.isError, true);
+    // invalid_args, not not_connected: the check runs before the canvas call.
+    assert.equal((result.structuredContent as { code?: string }).code, "invalid_args");
+  }
+  await close();
+});
+
 test("preflight answers instead of failing when Aseprite is absent", async () => {
   const { client, close } = await connected();
   const result = await client.callTool({ name: "preflight", arguments: {} });

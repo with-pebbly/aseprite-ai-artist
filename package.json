@@ -57,7 +57,7 @@
     "dev": "tsc -p tsconfig.json --watch",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test --experimental-strip-types tests/color.test.ts tests/palettes.test.ts tests/render.test.ts tests/grid.test.ts tests/text.test.ts tests/bridge.test.ts tests/server.test.ts tests/rules.test.ts tests/cli.test.ts tests/install.test.ts tests/launcher.test.ts tests/omp.test.ts tests/opencode.test.ts tests/headless.test.ts",
+    "test": "node --test --experimental-strip-types tests/color.test.ts tests/palettes.test.ts tests/render.test.ts tests/grid.test.ts tests/png.test.ts tests/text.test.ts tests/bridge.test.ts tests/server.test.ts tests/rules.test.ts tests/cli.test.ts tests/install.test.ts tests/launcher.test.ts tests/omp.test.ts tests/opencode.test.ts tests/headless.test.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "pnpm run clean && pnpm run build",
     "test:extension": "aseprite -b --script-param root=. --script tests/extension.test.lua",

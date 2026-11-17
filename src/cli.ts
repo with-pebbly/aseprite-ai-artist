@@ -8,6 +8,7 @@
  *   doctor             tell the user exactly what is broken
  */
 
+import path from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Bridge } from "./bridge/bridge.js";
 import { LiveClient } from "./bridge/client.js";
@@ -84,6 +85,7 @@ async function main(): Promise<void> {
         prompts: process.env.ASEPRITE_AI_PROMPTS !== "0",
         headless: truthy(flags.headless ?? process.env.ASEPRITE_AI_HEADLESS),
         asepritePath: typeof flags.aseprite === "string" ? flags.aseprite : undefined,
+        open: openList(typeof flags.open === "string" ? flags.open : process.env.ASEPRITE_AI_OPEN),
       });
     case "bridge":
       return runBridge({ pluginPort, controlPort });
@@ -107,6 +109,7 @@ async function serve(opts: {
   prompts: boolean;
   headless: boolean;
   asepritePath: string | undefined;
+  open: string[];
 }): Promise<void> {
   const { server, live } = createServer({
     pluginPort: opts.pluginPort,
@@ -119,6 +122,25 @@ async function serve(opts: {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // Headless only: open the operator's documents before the agent's first call,
+  // so a batch run starts the way a live one does — with the file already open.
+  // Never in live mode: there the user opens files, not the server.
+  if (opts.open.length > 0) {
+    if (live.mode !== "headless") {
+      process.stderr.write("[aseprite-ai-artist] --open only applies with --headless; ignoring it\n");
+    } else {
+      for (const file of opts.open) {
+        const full = path.resolve(file);
+        try {
+          await live.call("sprite.manage", { op: "open", path: full });
+          process.stderr.write(`[aseprite-ai-artist] opened ${full}\n`);
+        } catch (err) {
+          process.stderr.write(`[aseprite-ai-artist] could not open ${full}: ${(err as Error).message}\n`);
+        }
+      }
+    }
+  }
 
   const shutdown = () => {
     live.close();
@@ -362,6 +384,7 @@ Options:
   --aseprite <path>    Path to the Aseprite executable (headless mode; written as ASEPRITE_PATH by install)
   --allowLua           Enable the run_lua escape hatch (arbitrary code in Aseprite)
   --headless           Run a batch Aseprite this server owns instead of driving an open window
+  --open <files>       Headless: open these documents at startup (separated by '${path.delimiter}'; env ASEPRITE_AI_OPEN)
   --plugin-port <n>    Port the Aseprite extension dials (default ${DEFAULT_PLUGIN_PORT})
   --control-port <n>   Port MCP servers dial (default ${DEFAULT_CONTROL_PORT})
   --dry-run            Print what would change, write nothing
@@ -374,6 +397,11 @@ Examples:
   npx @pebbly/aseprite-ai-artist serve --headless --aseprite /Applications/Aseprite.app/Contents/MacOS/aseprite
 `,
   );
+}
+
+/** `--open` / ASEPRITE_AI_OPEN: documents separated by the platform's path delimiter. */
+function openList(value: string | undefined): string[] {
+  return (value ?? "").split(path.delimiter).map((f) => f.trim()).filter((f) => f.length > 0);
 }
 
 function truthy(value: unknown): boolean {
