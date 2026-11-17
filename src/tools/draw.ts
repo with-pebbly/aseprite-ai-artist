@@ -2,7 +2,8 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AsepriteLink } from "../bridge/link.js";
 import { LiveError } from "../lib/protocol.js";
-import { compileGrid, type CanvasSize } from "../lib/grid.js";
+import { compileGrid, compileImage, gridRowsFromText, readOpFile, type CanvasSize } from "../lib/grid.js";
+import { decodePng } from "../lib/png.js";
 import { layoutText, loadFont, type TextAnchor } from "../lib/text.js";
 import { fail, hexColor, ok, targetShape } from "./kit.js";
 
@@ -151,13 +152,31 @@ const drawOp = z.discriminatedUnion("kind", [
     rows: z
       .array(z.string().min(1))
       .min(1)
-      .describe("Top to bottom, one character per pixel, every row the same width. Up to the canvas size."),
+      .optional()
+      .describe("Top to bottom, one character per pixel, every row the same width. Up to the canvas size. Give this or `file`."),
+    file: z
+      .string()
+      .optional()
+      .describe(
+        "Instead of `rows`: a text file with the same rows, one per line (relative to your working directory). Use it when a script wrote the grid — no retyping.",
+      ),
     transparent: z
       .enum(["erase", "skip"])
       .default("erase")
       .describe(
         "Transparent cells: 'erase' clears them, so the grid's rectangle ends up exactly as written; 'skip' leaves the pixel underneath, to stamp a shape over existing art.",
       ),
+  }),
+  z.object({
+    kind: z.literal("image"),
+    path: z.string().describe("A PNG at 1× (one image pixel = one sprite pixel), relative to your working directory."),
+    x: z.number().int().default(0).describe("Sprite x of the image's left column."),
+    y: z.number().int().default(0).describe("Sprite y of the image's top row."),
+    crop: rectShape.optional().describe("Use only this rectangle of the PNG — one frame or layer cell of a sheet."),
+    transparent: z
+      .enum(["erase", "skip"])
+      .default("erase")
+      .describe("Alpha-0 pixels: 'erase' clears them, 'skip' leaves the pixel underneath. Partial alpha is refused."),
   }),
 ]);
 
@@ -167,13 +186,14 @@ export function registerDrawTools(server: McpServer, live: AsepriteLink): void {
     {
       title: "Draw",
       description:
-        "Apply a batch of drawing operations to one cel, as a single undoable action. Ops: pixels, line, polyline, rect, ellipse, fill, replace, dither, gradient, clear, blit, text, grid. " +
+        "Apply a batch of drawing operations to one cel, as a single undoable action. Ops: pixels, line, polyline, rect, ellipse, fill, replace, dither, gradient, clear, blit, text, grid, image. " +
         "Batch aggressively — a whole sprite in one call is normal and correct, and it means the user can undo your work with one Ctrl+Z. " +
         "Set `paletteLock` (default true) to snap every colour to the sprite's palette by perceptual distance before anything is written, so you cannot silently widen a curated palette. " +
         "Ops run in array order, so paint fills before outlines and outlines before highlights. " +
         "'text' is laid out here from a bitmap font and expanded to plain pixels before it reaches Aseprite — pass `measureOnly: true` with only 'text' ops to get each one's ink bounds without touching the sprite, e.g. to centre a label first. " +
         "'grid' paints a picture written as text — one character per pixel, a legend mapping characters to colours, the same shape `look op=\"ascii\"` returns — so you can see the whole silhouette while you write it instead of composing it from shapes. " +
-        "It is the easiest way to draw a small sprite or a whole animation frame, and to edit one: read a region with `look op=\"ascii\" layer=… rulers=false`, change the rows, and send them back as a grid at the region's x/y.",
+        "It is the easiest way to draw a small sprite or a whole animation frame, and to edit one: read a region with `look op=\"ascii\" layer=… rulers=false`, change the rows, and send them back as a grid at the region's x/y. " +
+        "If a script of yours produced the art, don't paste it: pass the rows as grid `file`, or the 1× PNG as 'image' — same palette lock, same erase/skip rule.",
       inputSchema: {
         ...targetShape,
         ops: z.array(drawOp).min(1).max(512).describe("Applied in order, in one transaction."),
@@ -259,8 +279,13 @@ export function registerDrawTools(server: McpServer, live: AsepriteLink): void {
           );
         }
 
+        // Checked before the canvas call, so a malformed op is refused without Aseprite.
+        if (args.ops.some((op) => op.kind === "grid" && (op.rows === undefined) === (op.file === undefined))) {
+          throw new LiveError("invalid_args", "A grid op needs exactly one of `rows` or `file`.");
+        }
+
         // A grid is bounded by the canvas, which only Aseprite knows.
-        const canvas: CanvasSize | undefined = args.ops.some((op) => op.kind === "grid")
+        const canvas: CanvasSize | undefined = args.ops.some((op) => op.kind === "grid" || op.kind === "image")
           ? await live.call<CanvasSize>("sprite.info", { sprite: args.sprite, includePalette: false }, { expect: ["width", "height"] })
           : undefined;
         const expandedOps: Record<string, unknown>[] = [];
@@ -269,7 +294,11 @@ export function registerDrawTools(server: McpServer, live: AsepriteLink): void {
             const layout = layoutText({ ...op, font: loadFont(op.font) });
             if (layout.pixels.length > 0) expandedOps.push({ kind: "pixels", points: layout.pixels });
           } else if (op.kind === "grid") {
-            expandedOps.push(...compileGrid(op, canvas!).ops);
+            const rows = op.rows ?? gridRowsFromText(readOpFile(op.file!).toString("utf8"));
+            expandedOps.push(...compileGrid({ ...op, rows }, canvas!).ops);
+          } else if (op.kind === "image") {
+            const png = decodePng(readOpFile(op.path));
+            expandedOps.push(...compileImage(png, op, canvas!, `image '${op.path}'`).ops);
           } else {
             expandedOps.push(op);
           }

@@ -57,6 +57,15 @@ instead). Bigger sprites: one grid per body part or per layer, each at its own
 `x`/`y` — long rows of identical characters are where a model miscounts, and a
 ragged row is refused with its row number rather than silently shifted.
 
+If you build the art with a script of your own (handy for big or repeated
+work: many frames, a growth sequence, a tile set), let the script write it to
+a file and hand the file over instead of pasting its output into the call:
+grid `file:"canopy.txt"` with the same rows and your legend, or
+`{ kind:"image", path:"frame07.png" }` for a 1× PNG (alpha 0 or 255 only;
+`crop` takes one cell of a sheet). Same palette lock, same erase/skip rule,
+and nothing gets miscopied. One `draw` call still targets one layer and frame,
+so name `layer` and `frame` on every call.
+
 Shapes are still the right tool for big regular forms — a sky gradient, a
 floor, a 40-pixel circle:
 
