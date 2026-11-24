@@ -6,6 +6,17 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- `draw` op `grid` takes `file` instead of `rows`: a text file with the same
+  rows, one per line. An agent that builds its art with a script hands the
+  file over instead of retyping every row into the call.
+- `draw` op `image` paints a 1× PNG into the target cel (`crop` takes one cell
+  of a sheet). It compiles to the same ops as a grid, so palette lock and
+  erase/skip behave the same; partial alpha is refused with its first pixel.
+- `serve --open <files>` (or `ASEPRITE_AI_OPEN`) opens documents at startup in
+  headless mode, so a batch run starts with its file already open.
+
 ### Changed
 
 - `look` op `ascii` returns the grid once instead of twice. With rulers (the
@@ -17,6 +28,9 @@ All notable changes to this project are documented here. Format follows
   `rulers: false`, edit `gridRows`, send them back as `draw` kind `grid` at
   `origin`. The studio skill now says `rulers=false`
   where it reads rows to write back.
+- `draw` and `studio` skills: point script-built art at `file`/`image`, and
+  wait for the critic in the foreground instead of setting timers — in an
+  unattended run a timer only adds idle time.
 
 ## [0.8.3] — 2026-11-09
 

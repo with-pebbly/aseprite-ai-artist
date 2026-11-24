@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
-import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -7,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { HeadlessClient } from "../dist/bridge/headless.js";
 import { findAsepriteBinary } from "../dist/extension.js";
+import { png } from "./png-writer.ts";
 import { createServer } from "../dist/server.js";
 
 const scratch = mkdtempSync(path.join(tmpdir(), "aia-headless-"));
@@ -189,6 +191,34 @@ test("preflight switches mode only when asked, and the choice sticks", { skip: n
 
 // The real chain: MCP → HeadlessClient → aseprite -b → headless/runner.lua →
 // the shipped extension. Skipped where Aseprite is not installed (CI).
+test("serve --open opens each document in the batch Aseprite before the first call", { skip: noFakeBinary }, async () => {
+  const docs = ["a.aseprite", "b.aseprite"];
+  // Ports nothing listens on, so the editor guard finds no live window.
+  const child = spawn(
+    process.execPath,
+    [path.resolve("dist/cli.js"), "serve", "--headless", "--aseprite", fakeAseprite(), "--open", docs.join(path.delimiter),
+      "--plugin-port", "19961", "--control-port", "19962"],
+    { cwd: scratch, stdio: ["pipe", "ignore", "pipe"] },
+  );
+  let log = "";
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`no 'opened' lines; stderr: ${log}`)), 10_000);
+      child.stderr.on("data", (d: Buffer) => {
+        log += d.toString();
+        // The child resolves against its cwd, which the OS reports with symlinks
+        // resolved — on macOS the temp dir under /var is really /private/var.
+        if (docs.every((doc) => log.includes(`opened ${path.join(realpathSync(scratch), doc)}`))) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
+  } finally {
+    child.kill();
+  }
+});
+
 const aseprite = findAsepriteBinary();
 test("headless drives a real batch Aseprite end to end", { skip: aseprite ? false : "no Aseprite executable" }, async () => {
   const { server, live } = createServer({ headless: true });
@@ -249,6 +279,26 @@ test("headless drives a real batch Aseprite end to end", { skip: aseprite ? fals
     const expected = rows.map((row) => Array.from(row, (g) => (g === "." ? "." : legend[g as "A" | "B"])));
     assert.deepEqual(await colours(), expected);
 
+    // The same picture from files a script wrote: grid `file`, then a 1× PNG
+    // through op 'image' — alpha 0 erases, so the PNG's clear cells undo the grid.
+    const gridFile = path.join(scratch, "grid.txt");
+    writeFileSync(gridFile, rows.join("\n") + "\n");
+    await call("cel", { op: "clear", layer: "grid", frame: 1 });
+    await call("draw", { layer: "grid", frame: 1, paletteLock: false, ops: [{ kind: "grid", x: 1, y: 2, legend, file: gridFile }] });
+    assert.deepEqual(await colours(), expected);
+    const rgba = (g: string) => (g === "A" ? [255, 0, 77, 255] : g === "B" ? [41, 173, 255, 255] : [0, 0, 0, 0]);
+    // A 7×3 sheet whose right 6 columns are the picture mirrored; crop takes them.
+    const mirrored = rows.map((row) => [...row].reverse().join(""));
+    writeFileSync(path.join(scratch, "sheet.png"), png(7, 3, 8, 6, mirrored.map((row) => [0, 0, 0, 255, ...[...row].flatMap(rgba)])));
+    await call("draw", {
+      layer: "grid",
+      frame: 1,
+      paletteLock: false,
+      ops: [{ kind: "image", path: path.join(scratch, "sheet.png"), x: 1, y: 2, crop: { x: 1, y: 0, width: 6, height: 3 } }],
+    });
+    assert.deepEqual(await colours(), mirrored.map((row) => Array.from(row, (g) => (g === "." ? "." : legend[g as "A" | "B"]))));
+    // Back to the original picture for the checks below.
+    await call("draw", { layer: "grid", frame: 1, paletteLock: false, ops: [{ kind: "grid", x: 1, y: 2, legend, rows }] });
     // The grid comes back once: bare gridRows without rulers, ruled text with them.
     const bare = await call("look", { op: "ascii", layer: "grid", frame: 1, rulers: false, region: { x: 1, y: 2, width: 6, height: 3 } });
     assert.equal(bare.text, undefined, "rulers=false must not repeat the grid as text");

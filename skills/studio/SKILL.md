@@ -67,6 +67,9 @@ workflow it names and follow that — do not do the step from memory.
    one — never grade your own work in place of it; you know what you meant,
    so you see it. Give it the document name and the brief, nothing about how
    it was made. Elsewhere, run `aseprite:review` and do its cold read first.
+   Wait for the critic's answer in the foreground; do not set timers,
+   wake-ups or polling loops for it. Your harness tells you when a subagent
+   finishes, and in a run with no one watching a timer only adds idle time.
 
    The critique decides whether you iterate at all. A draft ships as it is
    when its critique has **no BLOCKING finding and scores 7/10 or more** —
