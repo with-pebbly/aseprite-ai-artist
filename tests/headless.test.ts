@@ -297,6 +297,12 @@ test("headless drives a real batch Aseprite end to end", { skip: aseprite ? fals
     assert.deepEqual(await colours(), mirrored.map((row) => Array.from(row, (g) => (g === "." ? "." : legend[g as "A" | "B"]))));
     // Back to the original picture for the checks below.
     await call("draw", { layer: "grid", frame: 1, paletteLock: false, ops: [{ kind: "grid", x: 1, y: 2, legend, rows }] });
+    // The grid comes back once: bare gridRows without rulers, ruled text with them.
+    const bare = await call("look", { op: "ascii", layer: "grid", frame: 1, rulers: false, region: { x: 1, y: 2, width: 6, height: 3 } });
+    assert.equal(bare.text, undefined, "rulers=false must not repeat the grid as text");
+    const ruled = await call("look", { op: "ascii", layer: "grid", frame: 1, region: { x: 1, y: 2, width: 6, height: 3 } });
+    assert.equal(ruled.gridRows, undefined, "a ruled read must not repeat the grid as gridRows");
+    assert.match(String(ruled.text), /^\s+123456$/m, "the ruled text keeps its column ruler");
 
     // Glyphs are palette indices on a real sprite: two regions meeting the
     // colours in different orders agree, and an off-palette colour is flagged.

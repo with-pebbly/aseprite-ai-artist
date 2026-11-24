@@ -29,9 +29,10 @@ has to see them to recover.
   vision. Reads up to the whole canvas; pass a `region` to crop. Glyph *n* is
   palette entry *n* on every read, so regions of one sprite share a legend;
   colours outside the palette are listed in `offPalette` and are the only
-  glyphs that can change between reads. `rulers: false` prints the bare rows; either way
-  the result carries `gridRows`, `legend` and `origin`, which `draw` kind `grid`
-  takes back unchanged — read, edit the rows, write.
+  glyphs that can change between reads. With rulers (the default) the grid comes
+  back once, as ruled `text`; `rulers: false` returns it once as bare `gridRows`
+  instead, which — with `legend` and `origin` — `draw` kind `grid` takes back
+  unchanged: read with `rulers: false`, edit the rows, write.
 - **`filmstrip`** — every frame in one image. A vision model reads only the
   first frame of a GIF, so this is the only way to review animation. `layer`
   limits it to one layer.
