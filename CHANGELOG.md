@@ -6,6 +6,18 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `look` op `ascii` returns the grid once instead of twice. With rulers (the
+  default) the result carries the ruled `text`; with `rulers: false` it carries
+  the bare `gridRows` instead. Both used to come back on every read, so clients
+  that pass `structuredContent` to the model paid for the same grid twice — a
+  32×32 read went from ~2.5k to ~1.4k characters (~2.4k to ~1.3k without
+  rulers). The read → edit → write round trip is unchanged: read with
+  `rulers: false`, edit `gridRows`, send them back as `draw` kind `grid` at
+  `origin`. The studio skill now says `rulers=false`
+  where it reads rows to write back.
+
 ## [0.8.3] — 2026-11-09
 
 ### Changed
