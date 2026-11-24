@@ -57,6 +57,22 @@ test("every tool declares a description and an output schema", async () => {
   await close();
 });
 
+test("no tool schema uses tuple-form `items`, which strict providers reject (#12)", async () => {
+  const { client, close } = await connected();
+  const { tools } = await client.listTools();
+  // Zhipu GLM's OpenAI-compatible endpoint fails the whole request, not just
+  // the tool, when any schema has `items: [ ... ]`.
+  const tuples = (node: unknown, at: string): string[] => {
+    if (Array.isArray(node)) return node.flatMap((v, i) => tuples(v, `${at}[${i}]`));
+    if (node === null || typeof node !== "object") return [];
+    const own = "items" in node && Array.isArray(node.items) ? [at] : [];
+    return own.concat(Object.entries(node).flatMap(([k, v]) => tuples(v, `${at}.${k}`)));
+  };
+  const found = tools.flatMap((t) => [...tuples(t.inputSchema, `${t.name}.input`), ...tuples(t.outputSchema, `${t.name}.output`)]);
+  assert.deepEqual(found, []);
+  await close();
+});
+
 test("sprite_info's payload stays inside its declared output schema", async () => {
   // OpenCode validates structuredContent strictly and rejects any property the
   // schema does not declare ("data must NOT have additional properties"), so a
