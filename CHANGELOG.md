@@ -32,6 +32,15 @@ All notable changes to this project are documented here. Format follows
   wait for the critic in the foreground instead of setting timers — in an
   unattended run a timer only adds idle time.
 
+### Fixed
+
+- `validate` no longer breaks strict OpenAI-compatible providers (#12).
+  `expect.layerFrames` and `expect.mustNotOverlap` were declared as tuples, which
+  emit array-form `items`; Zhipu GLM rejects that and fails the whole request,
+  so connecting the server broke every message. Both are now two-element arrays
+  of one type (`minItems`/`maxItems` 2) — same contract, portable schema. A
+  test keeps every tool schema free of tuple-form `items`.
+
 ## [0.8.3] — 2026-11-09
 
 ### Changed

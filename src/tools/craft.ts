@@ -115,12 +115,15 @@ export function registerCraftTools(server: McpServer, live: AsepriteLink): void 
           .describe("Treat style warnings as failures. Use when the user asked for a specific discipline."),
         expect: z
           .object({
+            // Pairs are fixed-length arrays, not z.tuple: a tuple emits array-form
+            // `items`, and strict OpenAI-compatible providers (Zhipu GLM) reject the
+            // whole request over it (#12). Both elements share one type, so nothing is lost.
             layerFrames: z
-              .record(z.array(z.tuple([z.number().int().positive(), z.number().int().positive()])))
+              .record(z.array(z.array(z.number().int().positive()).length(2)))
               .optional()
               .describe("Per layer, the [from,to] frame ranges (1-based, inclusive) it should hold ink in."),
             mustNotOverlap: z
-              .array(z.tuple([z.string(), z.string()]))
+              .array(z.array(z.string()).length(2))
               .optional()
               .describe("Layer name pairs whose opaque pixels must never intersect on the same frame."),
           })
