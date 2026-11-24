@@ -68,6 +68,13 @@ listed in `offPalette`; only those can change between reads. The alphabet is
 ASCII first, then Latin-1 and Latin Extended-A letters, 261 in all, so a full
 256-colour palette fits.
 
+**Amended (0.8.4): one copy per read.** `look ascii` no longer returns the ruled
+`text` and `gridRows` together — clients that hand `structuredContent` to the
+model paid for the grid twice. With rulers (the default) it returns `text`;
+`rulers: false` returns `gridRows`, which is what the read → edit → write loop
+uses. `draw` kind `grid` also takes the rows from a `file`, and op `image` takes
+a 1× PNG, so rows a script produced need not be retyped.
+
 **Deferred, on purpose.** Cell separators (`O O S S`) have evidence for reading
 ARC grids but double the tokens, and nothing shows they help a model *write*
 pixel art. Run-length encoding and row labels in the writable form have no
