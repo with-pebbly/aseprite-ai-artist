@@ -33,6 +33,14 @@ Tools that take a `path` — `export`, `sprite_manage` (`open` / `save_as`),
 There is no sandbox root. Paths are passed to Aseprite as given; nothing is
 interpolated into a shell.
 
+`draw` reads files in the server process itself: a grid's `file` and an
+`image` op's `path`, resolved against the server's working directory, any
+location, up to 16 MiB. Neither is executed or forwarded anywhere, but a grid
+error names the offending row, column and glyph, so a text file's characters
+can surface in a tool result. The PNG decoder refuses images over 4096×4096
+and image data that inflates past what the header declares, so a crafted file
+cannot exhaust the server's memory.
+
 `look` writes temporary PNGs into the OS temp directory and deletes them after
 reading.
 

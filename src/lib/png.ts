@@ -17,6 +17,8 @@ export interface DecodedPng {
 }
 
 const SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
+/** 4096×4096: a whole sprite sheet fits, and decoding one stays around 200 MB. */
+const MAX_PIXELS = 4096 * 4096;
 
 function unsupported(message: string): LiveError {
   return new LiveError("invalid_args", `${message} Save it as a non-interlaced 8-bit RGBA PNG.`);
@@ -42,6 +44,7 @@ export function decodePng(buf: Uint8Array): DecodedPng {
     const data = buf.subarray(pos + 8, pos + 8 + length);
     if (data.length !== length) throw new LiveError("invalid_args", "PNG is truncated.");
     if (type === "IHDR") {
+      if (length !== 13) throw new LiveError("invalid_args", `PNG IHDR chunk is ${length} bytes, not 13.`);
       width = view.getUint32(pos + 8);
       height = view.getUint32(pos + 12);
       depth = data[8]!;
@@ -60,6 +63,11 @@ export function decodePng(buf: Uint8Array): DecodedPng {
   }
 
   if (width === 0 || height === 0) throw new LiveError("invalid_args", "PNG has no IHDR chunk or is empty.");
+  // Checked before anything is inflated or allocated: the header alone decides
+  // how much memory decoding takes, and it is attacker-sized.
+  if (width * height > MAX_PIXELS) {
+    throw new LiveError("too_large", `PNG is ${width}×${height}; the limit is ${MAX_PIXELS} pixels.`, { width, height });
+  }
   const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[colorType];
   if (channels === undefined) throw unsupported(`PNG colour type ${colorType} is not supported.`);
   const lowBitOk = colorType === 0 || colorType === 3;
@@ -68,11 +76,23 @@ export function decodePng(buf: Uint8Array): DecodedPng {
   }
   if (colorType === 3 && !palette) throw new LiveError("invalid_args", "Palette PNG has no PLTE chunk.");
 
-  const raw = inflateSync(Buffer.concat(idat));
   const bitsPerPixel = channels * depth;
   const stride = Math.ceil((width * bitsPerPixel) / 8);
   const bpp = Math.max(1, bitsPerPixel >> 3);
-  if (raw.length < height * (stride + 1)) throw new LiveError("invalid_args", "PNG image data is truncated.");
+  const expected = height * (stride + 1);
+  // Capped at what the header promises, so a small file that inflates to
+  // gigabytes (a zip bomb) is refused instead of taking the server down.
+  let raw: Buffer;
+  try {
+    raw = inflateSync(Buffer.concat(idat), { maxOutputLength: expected });
+  } catch (err) {
+    const tooLarge = (err as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE";
+    throw new LiveError(
+      "invalid_args",
+      tooLarge ? `PNG image data inflates past the ${width}×${height} its header declares.` : "PNG image data is corrupt.",
+    );
+  }
+  if (raw.length < expected) throw new LiveError("invalid_args", "PNG image data is truncated.");
 
   // Undo the per-row filters in place.
   const rows = new Uint8Array(height * stride);

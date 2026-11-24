@@ -1,3 +1,4 @@
+import { deflateSync } from "node:zlib";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -69,6 +70,23 @@ test("interlaced and 16-bit PNGs are refused by name", () => {
   i[8 + 8 + 12] = 1; // IHDR interlace byte
   assert.throws(() => decodePng(i), /Interlaced/);
   assert.throws(() => decodePng(Buffer.from("not a png")), /signature/);
+});
+
+test("a PNG that inflates past its header, or declares a huge one, is refused before decoding", () => {
+  // 1×1 RGBA promises 5 bytes of image data; this IDAT inflates to 64 MiB.
+  const ihdr = Buffer.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]);
+  const bomb = Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(Buffer.alloc(64 * 1024 * 1024))),
+    chunk("IEND", new Uint8Array()),
+  ]);
+  assert.throws(() => decodePng(bomb), /inflates past the 1×1/);
+  // The header alone decides the allocation, so a 65535×65535 claim stops there.
+  const huge = png(1, 1, 8, 6, [[0, 0, 0, 0]]);
+  huge.writeUInt32BE(65535, 16);
+  huge.writeUInt32BE(65535, 20);
+  assert.throws(() => decodePng(huge), /65535×65535; the limit is/);
 });
 
 test("compileImage paints colours, erases alpha 0, honours crop and x/y", () => {

@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -206,7 +206,9 @@ test("serve --open opens each document in the batch Aseprite before the first ca
       const timer = setTimeout(() => reject(new Error(`no 'opened' lines; stderr: ${log}`)), 10_000);
       child.stderr.on("data", (d: Buffer) => {
         log += d.toString();
-        if (docs.every((doc) => log.includes(`opened ${path.join(scratch, doc)}`))) {
+        // The child resolves against its cwd, which the OS reports with symlinks
+        // resolved — on macOS the temp dir under /var is really /private/var.
+        if (docs.every((doc) => log.includes(`opened ${path.join(realpathSync(scratch), doc)}`))) {
           clearTimeout(timer);
           resolve();
         }
