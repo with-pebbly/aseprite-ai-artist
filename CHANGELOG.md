@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.8.4] — 2026-11-24
+
 ### Added
 
 - `draw` op `grid` takes `file` instead of `rows`: a text file with the same
